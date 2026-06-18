@@ -298,19 +298,46 @@ function SectionShell({ children, max = "max-w-3xl" }: { children: ReactNode; ma
   return <div className={`mx-auto w-full ${max}`}>{children}</div>;
 }
 
+const GENERATE_WEBHOOK_URL =
+  "https://n8n.bgiax.cloud/webhook-test/6119f397-36f8-48b6-9408-bfacd284f211";
+
 function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => void }) {
   const [format, setFormat] = useState<Format>("Feed");
   const [prompt, setPrompt] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
-    onGenerate(format, prompt.trim());
-    setPrompt("");
-    setFileName(null);
+    if (!prompt.trim() || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await fetch(GENERATE_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          format,
+          prompt: prompt.trim(),
+          image: fileName,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      onGenerate(format, prompt.trim());
+      setPrompt("");
+      setFileName(null);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Falha ao enviar: ${err.message}`
+          : "Falha ao enviar para o webhook.",
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -374,20 +401,27 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
           />
         </div>
 
+        {error && (
+          <p className="text-xs text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+
         <div className="flex justify-end">
           <button
             type="submit"
             className="inline-flex items-center gap-2 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-            disabled={!prompt.trim()}
+            disabled={!prompt.trim() || sending}
           >
             <Sparkles className="h-4 w-4" />
-            Gerar Conteúdo
+            {sending ? "Enviando…" : "Gerar Conteúdo"}
           </button>
         </div>
       </form>
     </SectionShell>
   );
 }
+
 
 function ReviewList({
   posts,
