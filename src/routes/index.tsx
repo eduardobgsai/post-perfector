@@ -13,6 +13,7 @@ import {
   Edit3,
   Sparkles,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -304,37 +305,71 @@ const GENERATE_WEBHOOK_URL =
 function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => void }) {
   const [format, setFormat] = useState<Format>("Feed");
   const [prompt, setPrompt] = useState("");
+  // Estado original mantido para exibição na interface
   const [fileName, setFileName] = useState<string | null>(null);
+  // Novo estado para guardar o ficheiro real que será enviado
+  const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false); // Feedback de upload
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || sending) return;
+    if (!prompt.trim() || sending || uploadingImage) return;
     setSending(true);
     setError(null);
+
     try {
+      let finalImageUrl: string | null = fileName;
+
+      // 1. Fazer o upload para o Supabase se houver um ficheiro selecionado
+      if (file) {
+        setUploadingImage(true);
+        const fileExt = file.name.split(".").pop();
+        // Usar crypto.randomUUID() previne que ficheiros com o mesmo nome se substituam
+        const uniqueName = `${crypto.randomUUID()}.${fileExt}`;
+        const filePath = `entradas/${uniqueName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("midias_posts") // ATENÇÃO: Substitua pelo nome exato do seu bucket
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // 2. Obter a URL pública da imagem carregada
+        const { data: publicUrlData } = supabase.storage
+          .from("midias_posts") // Substitua pelo nome exato do seu bucket
+          .getPublicUrl(filePath);
+
+        finalImageUrl = publicUrlData.publicUrl;
+        setUploadingImage(false);
+      }
+
+      // 3. Enviar os dados para o seu webhook do n8n com a URL da imagem
       await fetch(GENERATE_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           format,
           prompt: prompt.trim(),
-          image: fileName,
+          image: finalImageUrl, // Agora envia a URL completa do Supabase
           timestamp: new Date().toISOString(),
         }),
       });
+
       onGenerate(format, prompt.trim());
       setPrompt("");
       setFileName(null);
+      setFile(null); // Limpar o ficheiro após o sucesso
     } catch (err) {
       setError(
         err instanceof Error
           ? `Falha ao enviar: ${err.message}`
           : "Falha ao enviar para o webhook.",
       );
+      setUploadingImage(false);
     } finally {
       setSending(false);
     }
@@ -368,7 +403,10 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
               e.preventDefault();
               setDragging(false);
               const f = e.dataTransfer.files?.[0];
-              if (f) setFileName(f.name);
+              if (f) {
+                setFileName(f.name);
+                setFile(f); // Guarda o ficheiro real arrastado
+              }
             }}
             onClick={() => inputRef.current?.click()}
             className={`flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed px-4 py-10 text-center transition-colors ${
@@ -385,7 +423,16 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setFileName(f.name);
+                  setFile(f); // Guarda o ficheiro real selecionado via clique
+                } else {
+                  setFileName(null);
+                  setFile(null);
+                }
+              }}
             />
           </div>
         </div>
@@ -411,10 +458,10 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
           <button
             type="submit"
             className="inline-flex items-center gap-2 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-            disabled={!prompt.trim() || sending}
+            disabled={!prompt.trim() || sending || uploadingImage}
           >
             <Sparkles className="h-4 w-4" />
-            {sending ? "Enviando…" : "Gerar Conteúdo"}
+            {uploadingImage ? "A carregar imagem..." : sending ? "A enviar…" : "Gerar Conteúdo"}
           </button>
         </div>
       </form>
