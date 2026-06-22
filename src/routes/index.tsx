@@ -19,10 +19,10 @@ import {
   Instagram,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -42,29 +42,16 @@ type View = "new" | "review" | "scheduled" | "history";
 
 type Format = "Feed" | "Reels" | "Stories";
 
-type ReviewPost = {
+export type GeneratedPost = {
   id: string;
-  format: Format;
-  caption: string;
-  image: string;
   prompt: string;
-};
-
-type ScheduledPost = {
-  id: string;
-  format: Format;
+  status: "Gerando" | "Aguardando Aprovação" | "Aprovada" | "Publicar Agora" | "Postada";
+  agendada?: boolean;
+  format: string;
+  image_url: string;
+  video_url: string;
   caption: string;
-  image: string;
-  scheduledFor: string;
-};
-
-type HistoryPost = {
-  id: string;
-  format: Format;
-  caption: string;
-  image: string;
-  status: "Publicado" | "Recusado";
-  date: string;
+  created_at: string;
 };
 
 const PLACEHOLDER_IMG =
@@ -73,67 +60,43 @@ const PLACEHOLDER_IMG =
     `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><rect width='400' height='400' fill='%23f1efea'/><text x='50%' y='50%' font-family='Inter,sans-serif' font-size='16' fill='%23a8a29e' text-anchor='middle' dominant-baseline='middle'>imagem gerada</text></svg>`,
   );
 
-const initialReview: ReviewPost[] = [
-  {
-    id: "r1",
-    format: "Feed",
-    caption:
-      "Comece a semana com clareza. Três passos simples para organizar suas ideias antes do café esfriar. ☕",
-    image: PLACEHOLDER_IMG,
-    prompt: "Post motivacional sobre produtividade de segunda-feira",
-  },
-  {
-    id: "r2",
-    format: "Reels",
-    caption:
-      "Você não precisa de uma nova ferramenta. Precisa de um sistema. Veja como simplificar o seu fluxo em 30 segundos.",
-    image: PLACEHOLDER_IMG,
-    prompt: "Reels curto sobre simplificar fluxo de trabalho",
-  },
-  {
-    id: "r3",
-    format: "Stories",
-    caption: "Enquete: qual seu maior bloqueio criativo hoje? 👇",
-    image: PLACEHOLDER_IMG,
-    prompt: "Story com enquete sobre criatividade",
-  },
-];
-
-const initialScheduled: ScheduledPost[] = [
-  {
-    id: "s1",
-    format: "Feed",
-    caption: "Lançamento amanhã. Marque na agenda.",
-    image: PLACEHOLDER_IMG,
-    scheduledFor: "2026-06-20T09:00",
-  },
-];
-
-const initialHistory: HistoryPost[] = [
-  {
-    id: "h1",
-    format: "Feed",
-    caption: "Obrigado pelos 10k. Vocês fazem isso ser possível.",
-    image: PLACEHOLDER_IMG,
-    status: "Publicado",
-    date: "2026-06-12",
-  },
-  {
-    id: "h2",
-    format: "Reels",
-    caption: "Versão antiga descartada na revisão.",
-    image: PLACEHOLDER_IMG,
-    status: "Recusado",
-    date: "2026-06-10",
-  },
-];
-
 function App() {
   const [view, setView] = useState<View>("review");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [reviewPosts, setReviewPosts] = useState<ReviewPost[]>(initialReview);
-  const [scheduled, setScheduled] = useState<ScheduledPost[]>(initialScheduled);
-  const [history, setHistory] = useState<HistoryPost[]>(initialHistory);
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [reviewPosts, setReviewPosts] = useState<GeneratedPost[]>([]);
+  const [scheduled, setScheduled] = useState<GeneratedPost[]>([]);
+  const [history, setHistory] = useState<GeneratedPost[]>([]);
+
+  // Modal State
+  const [selectedPost, setSelectedPost] = useState<GeneratedPost | null>(null);
+
+  const fetchPosts = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("generated_posts")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Erro ao buscar posts:", error);
+      } else if (data) {
+        setReviewPosts(data.filter((p) => p.status === "Aguardando Aprovação"));
+        setScheduled(data.filter((p) => p.status === "Aprovada" && p.agendada === true));
+        setHistory(data.filter((p) => p.status === "Postada" || p.status === "Publicar Agora" || (p.status === "Aprovada" && !p.agendada)));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPosts();
+  }, [view]);
 
   const navItems: { id: View; label: string; icon: typeof Inbox; count?: number }[] = [
     { id: "new", label: "Novo Post", icon: PenSquare },
@@ -149,67 +112,50 @@ function App() {
     history: "Histórico",
   };
 
-  const handleApprovePublish = (post: ReviewPost) => {
+  const handleApprovePublish = (post: GeneratedPost) => {
     setReviewPosts((p) => p.filter((x) => x.id !== post.id));
     setHistory((h) => [
       {
-        id: post.id,
-        format: post.format,
-        caption: post.caption,
-        image: post.image,
+        ...post,
         status: "Publicado",
-        date: new Date().toISOString().slice(0, 10),
       },
       ...h,
     ]);
   };
 
-  const handleSchedule = (post: ReviewPost, when: string) => {
+  const handleSchedule = (post: GeneratedPost, when: string) => {
     setReviewPosts((p) => p.filter((x) => x.id !== post.id));
     setScheduled((s) => [
-      { id: post.id, format: post.format, caption: post.caption, image: post.image, scheduledFor: when },
+      {
+        ...post,
+        status: "Agendado",
+      },
       ...s,
     ]);
   };
 
-  const handleReject = (post: ReviewPost) => {
+  const handleReject = (post: GeneratedPost) => {
     setReviewPosts((p) => p.filter((x) => x.id !== post.id));
     setHistory((h) => [
       {
-        id: post.id,
-        format: post.format,
-        caption: post.caption,
-        image: post.image,
+        ...post,
         status: "Recusado",
-        date: new Date().toISOString().slice(0, 10),
       },
       ...h,
     ]);
   };
 
-  const handleRequestChange = (post: ReviewPost, note: string) => {
+  const handleRequestChange = (post: GeneratedPost, note: string) => {
     setReviewPosts((p) =>
       p.map((x) =>
-        x.id === post.id
-          ? { ...x, caption: `[Ajuste solicitado: ${note}] ${x.caption}` }
-          : x,
+        x.id === post.id ? { ...x, caption: `[Ajuste solicitado: ${note}] ${x.caption}` } : x,
       ),
     );
   };
 
   const handleGenerate = (format: Format, prompt: string) => {
-    const id = `r${Date.now()}`;
-    setReviewPosts((p) => [
-      {
-        id,
-        format,
-        prompt,
-        image: PLACEHOLDER_IMG,
-        caption: `Conteúdo gerado a partir do prompt: "${prompt.slice(0, 80)}${prompt.length > 80 ? "…" : ""}"`,
-      },
-      ...p,
-    ]);
     setView("review");
+    fetchPosts();
   };
 
   return (
@@ -290,16 +236,21 @@ function App() {
           {view === "review" && (
             <ReviewList
               posts={reviewPosts}
-              onApprovePublish={handleApprovePublish}
-              onSchedule={handleSchedule}
-              onReject={handleReject}
-              onRequestChange={handleRequestChange}
+              isLoading={isLoading}
+              onPreview={(post) => setSelectedPost(post)}
             />
           )}
-          {view === "scheduled" && <ScheduledList posts={scheduled} />}
-          {view === "history" && <HistoryList posts={history} />}
+          {view === "scheduled" && <ScheduledList posts={scheduled} isLoading={isLoading} onPreview={(post) => setSelectedPost(post)} />}
+          {view === "history" && <HistoryList posts={history} isLoading={isLoading} onPreview={(post) => setSelectedPost(post)} />}
         </main>
       </div>
+
+      <PostDetailsModal 
+        post={selectedPost} 
+        onClose={() => setSelectedPost(null)} 
+        onUpdate={() => fetchPosts()}
+        onLocalUpdate={(updatedPost) => setSelectedPost(updatedPost)}
+      />
     </div>
   );
 }
@@ -309,42 +260,116 @@ function SectionShell({ children, max = "max-w-3xl" }: { children: ReactNode; ma
 }
 
 const GENERATE_WEBHOOK_URL =
-  "https://n8n.bgiax.cloud/webhook-test/6119f397-36f8-48b6-9408-bfacd284f211";
+  "https://webhook.bgiax.cloud/webhook/6119f397-36f8-48b6-9408-bfacd284f211";
 
 const LOADING_MESSAGES = [
   "Analisando sua imagem e prompt...",
   "A IA está roteirizando e gerando o vídeo mágico...",
   "Escrevendo uma legenda de alta performance...",
-  "Finalizando os últimos detalhes..."
+  "Finalizando os últimos detalhes...",
 ];
 
-const generateMediaAPI = async (imageFile: File | null, prompt: string, format: string): Promise<{ videoUrl: string; generatedCaption: string }> => {
-  const formData = new FormData();
-  formData.append("prompt", prompt);
-  formData.append("format", format);
+const generateMediaAPI = async (
+  imageFile: File | null,
+  prompt: string,
+  format: string,
+): Promise<{ videoUrl: string; generatedCaption: string }> => {
+  let imageUrl = "";
+
+  // 1. Gerar UUID único para o post
+  const postId =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+
+  // 2. Upload da imagem para o Supabase Storage se houver
   if (imageFile) {
-    formData.append("image", imageFile);
+    const fileExt = imageFile.name.split(".").pop() || "jpg";
+    const filePath = `entradas/${postId}.${fileExt}`;
+
+    const { error } = await supabase.storage.from("midias_posts").upload(filePath, imageFile, {
+      upsert: true,
+    });
+
+    if (error) {
+      console.error("Erro ao fazer upload da imagem:", error);
+      throw new Error("Erro ao fazer upload da imagem para o Supabase Storage: " + error.message);
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("midias_posts").getPublicUrl(filePath);
+
+    imageUrl = publicUrl;
   }
+
+  // 3. Enviar o ID e os dados para o webhook do n8n
+  const apiFormat = format === "Feed" ? "VIDEO" : format === "Reels" ? "REELS" : format.toUpperCase();
 
   const response = await fetch(GENERATE_WEBHOOK_URL, {
     method: "POST",
-    body: formData,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      id: postId,
+      format: apiFormat,
+      prompt,
+      image: imageUrl || null,
+      timestamp: new Date().toISOString(),
+    }),
   });
 
   if (!response.ok) {
     throw new Error("Falha ao se comunicar com o webhook");
   }
 
-  const result = await response.json();
+  // 4. Polling no Supabase na tabela 'generated_posts' aguardando o processamento assíncrono do n8n
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const maxAttempts = 60; // 3 minutos no total (60 tentativas * 3s)
 
-  if (result.status === "success" && result.data) {
-    return {
-      videoUrl: result.data.videoUrls,
-      generatedCaption: result.data.caption,
-    };
-  }
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > maxAttempts) {
+        clearInterval(interval);
+        reject(
+          new Error(
+            "Tempo limite excedido aguardando o post ser gerado no Supabase. Verifique se o fluxo do n8n foi concluído.",
+          ),
+        );
+        return;
+      }
 
-  throw new Error("Formato de resposta inválido");
+      try {
+        const { data, error } = await supabase
+          .from("generated_posts")
+          .select("video_url, caption")
+          .eq("id", postId)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Erro ao fazer polling no Supabase:", error);
+          return; // ignora falhas de rede temporárias e tenta novamente
+        }
+
+        // Se o registro foi encontrado e tem o vídeo e legenda preenchidos
+        if (data && data.video_url && data.caption) {
+          clearInterval(interval);
+          resolve({
+            videoUrl: data.video_url,
+            generatedCaption: data.caption,
+          });
+        }
+      } catch (err) {
+        console.error("Erro na busca do post:", err);
+      }
+    }, 3000);
+  });
 };
 
 const publishToInstagramAPI = async (videoUrl: string, finalCaption: string): Promise<boolean> => {
@@ -368,7 +393,6 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Estados: generating
-  const [progress, setProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState("");
 
   // Estados: preview
@@ -380,35 +404,35 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
     if (step === "generating") {
       let msgIndex = 0;
       setLoadingMessage(LOADING_MESSAGES[0]);
-      setProgress(0);
 
       const interval = setInterval(() => {
         msgIndex++;
         if (msgIndex < LOADING_MESSAGES.length) {
           setLoadingMessage(LOADING_MESSAGES[msgIndex]);
         }
-        setProgress((p) => Math.min(p + 25, 95));
       }, 1500);
 
       generateMediaAPI(file, prompt, format)
         .then((result) => {
           clearInterval(interval);
-          setProgress(100);
           setTimeout(() => {
             setVideoUrl(result.videoUrl);
             setCaption(result.generatedCaption);
             setStep("preview");
           }, 600);
         })
-        .catch(() => {
+        .catch((err) => {
           clearInterval(interval);
-          setError("Falha ao gerar o conteúdo. Tente novamente.");
+          console.error("Erro ao gerar conteúdo:", err);
+          setError(
+            err instanceof Error ? err.message : "Falha ao gerar o conteúdo. Tente novamente.",
+          );
           setStep("idle");
         });
 
       return () => clearInterval(interval);
     }
-  }, [step, file, prompt]);
+  }, [step, file, prompt, format]);
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -437,17 +461,29 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   if (step === "generating") {
     return (
       <SectionShell>
-        <div className="flex flex-col items-center justify-center space-y-8 py-20 text-center animate-in fade-in duration-500">
-          <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-accent/50 shadow-inner">
-            <Loader2 className="absolute h-12 w-12 animate-spin text-foreground/80" />
-            <Wand2 className="h-6 w-6 text-muted-foreground animate-pulse" />
-          </div>
-          <div className="space-y-4 w-full max-w-md">
-            <h3 className="text-xl font-medium text-foreground tracking-tight transition-all duration-300">
-              {loadingMessage}
-            </h3>
-            <Progress value={progress} className="h-2 w-full transition-all duration-500" />
-            <p className="text-sm text-muted-foreground">Por favor, aguarde. O seu post está sendo gerado e isso pode levar alguns minutos...</p>
+        <style>{`
+          @keyframes gradient-xy {
+            0%, 100% { background-size: 400% 400%; background-position: left center; }
+            50% { background-size: 200% 200%; background-position: right center; }
+          }
+          .animate-gradient-xy { animation: gradient-xy 8s ease infinite; }
+        `}</style>
+        <div className="relative overflow-hidden rounded-3xl border border-border bg-card/50 shadow-sm transition-all">
+          <div className="absolute inset-0 z-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 animate-gradient-xy opacity-80" />
+          
+          <div className="relative z-10 flex flex-col items-center justify-center space-y-8 py-24 text-center animate-in fade-in duration-500">
+            <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-background/60 shadow-md backdrop-blur-md">
+              <Loader2 className="absolute h-12 w-12 animate-spin text-primary/80" />
+              <Wand2 className="h-6 w-6 text-muted-foreground animate-pulse" />
+            </div>
+            <div className="space-y-4 w-full max-w-md px-4">
+              <h3 className="text-2xl font-medium text-foreground tracking-tight transition-all duration-300">
+                {loadingMessage}
+              </h3>
+              <p className="text-base text-muted-foreground leading-relaxed">
+                Por favor, aguarde. O seu post está sendo gerado e isso pode levar alguns minutos...
+              </p>
+            </div>
           </div>
         </div>
       </SectionShell>
@@ -480,9 +516,9 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
             {/* Video Player */}
             <div className="relative aspect-video sm:aspect-[4/5] bg-black flex items-center justify-center">
               {videoUrl ? (
-                <video 
-                  src={videoUrl} 
-                  controls 
+                <video
+                  src={videoUrl}
+                  controls
                   className="max-h-full max-w-full object-contain"
                   autoPlay
                   loop
@@ -492,15 +528,15 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
                 <Skeleton className="h-full w-full rounded-none" />
               )}
             </div>
-            
+
             <CardContent className="p-4 space-y-4 bg-card">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium text-foreground flex items-center gap-2">
                   <Edit3 className="h-4 w-4" /> Sua legenda
                 </label>
-                <Textarea 
-                  value={caption} 
-                  onChange={(e) => setCaption(e.target.value)} 
+                <Textarea
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
                   className="min-h-[120px] resize-none text-sm focus-visible:ring-1 p-3 leading-relaxed"
                   placeholder="Escreva sua legenda aqui..."
                 />
@@ -545,7 +581,8 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
           </div>
           <h2 className="text-2xl font-bold tracking-tight mb-2">Sucesso!</h2>
           <p className="text-muted-foreground text-sm mb-8 leading-relaxed">
-            Seu post foi gerado e publicado no Instagram. Acompanhe o engajamento diretamente no app.
+            Seu post foi gerado e publicado no Instagram. Acompanhe o engajamento diretamente no
+            app.
           </p>
           <button
             onClick={resetForm}
@@ -562,7 +599,13 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   // Estado: idle
   return (
     <SectionShell>
-      <form onSubmit={(e) => { e.preventDefault(); if (prompt.trim()) setStep("generating"); }} className="space-y-6">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (prompt.trim()) setStep("generating");
+        }}
+        className="space-y-6"
+      >
         <div>
           <label className="mb-2 block text-sm font-medium text-foreground">Formato</label>
           <select
@@ -577,7 +620,9 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-foreground">Imagem Base (Opcional)</label>
+          <label className="mb-2 block text-sm font-medium text-foreground">
+            Imagem Base (Opcional)
+          </label>
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -595,7 +640,9 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
             }}
             onClick={() => inputRef.current?.click()}
             className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-12 text-center transition-all duration-200 ${
-              dragging ? "border-foreground bg-accent/50" : "border-border bg-card hover:bg-accent/30 hover:border-foreground/50"
+              dragging
+                ? "border-foreground bg-accent/50"
+                : "border-border bg-card hover:bg-accent/30 hover:border-foreground/50"
             }`}
           >
             <Upload className="mb-3 h-6 w-6 text-muted-foreground" />
@@ -634,7 +681,10 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
         </div>
 
         {error && (
-          <p className="text-sm text-destructive font-medium bg-destructive/10 px-3 py-2 rounded-md" role="alert">
+          <p
+            className="text-sm text-destructive font-medium bg-destructive/10 px-3 py-2 rounded-md"
+            role="alert"
+          >
             {error}
           </p>
         )}
@@ -654,20 +704,25 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   );
 }
 
-
 function ReviewList({
   posts,
-  onApprovePublish,
-  onSchedule,
-  onReject,
-  onRequestChange,
+  isLoading,
+  onPreview,
 }: {
-  posts: ReviewPost[];
-  onApprovePublish: (p: ReviewPost) => void;
-  onSchedule: (p: ReviewPost, when: string) => void;
-  onReject: (p: ReviewPost) => void;
-  onRequestChange: (p: ReviewPost, note: string) => void;
+  posts: GeneratedPost[];
+  isLoading: boolean;
+  onPreview: (p: GeneratedPost) => void;
 }) {
+  if (isLoading) {
+    return (
+      <SectionShell>
+        <div className="flex justify-center p-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </SectionShell>
+    );
+  }
+
   if (posts.length === 0) {
     return (
       <SectionShell>
@@ -682,158 +737,68 @@ function ReviewList({
     <SectionShell max="max-w-5xl">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {posts.map((post) => (
-          <ReviewCard
-            key={post.id}
-            post={post}
-            onApprovePublish={() => onApprovePublish(post)}
-            onSchedule={(when) => onSchedule(post, when)}
-            onReject={() => onReject(post)}
-            onRequestChange={(note) => onRequestChange(post, note)}
-          />
+          <ReviewCard key={post.id} post={post} onPreview={() => onPreview(post)} />
         ))}
       </div>
     </SectionShell>
   );
 }
 
-function ReviewCard({
-  post,
-  onApprovePublish,
-  onSchedule,
-  onReject,
-  onRequestChange,
-}: {
-  post: ReviewPost;
-  onApprovePublish: () => void;
-  onSchedule: (when: string) => void;
-  onReject: () => void;
-  onRequestChange: (note: string) => void;
-}) {
-  const [approveOpen, setApproveOpen] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [changeOpen, setChangeOpen] = useState(false);
-  const [when, setWhen] = useState("");
-  const [note, setNote] = useState("");
-
+function ReviewCard({ post, onPreview }: { post: GeneratedPost; onPreview: () => void }) {
   return (
-    <article className="overflow-hidden rounded-md border border-border bg-card">
+    <article
+      onClick={onPreview}
+      className="overflow-hidden rounded-md border border-border bg-card cursor-pointer hover:border-foreground/50 transition-colors"
+    >
       <div className="flex flex-col gap-4 p-4 sm:flex-row">
-        <img
-          src={post.image}
-          alt="Pré-visualização do post"
-          className="h-40 w-full shrink-0 rounded-md border border-border object-cover sm:h-32 sm:w-32"
-        />
+        {post.image_url ? (
+          <img
+            src={post.image_url}
+            alt="Pré-visualização do post"
+            className="h-40 w-full shrink-0 rounded-md border border-border object-cover sm:h-32 sm:w-32"
+          />
+        ) : (
+          <div className="h-40 w-full shrink-0 rounded-md border border-border bg-secondary/50 flex items-center justify-center sm:h-32 sm:w-32">
+            <Sparkles className="h-6 w-6 text-muted-foreground" />
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex items-center gap-2">
-            <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+            <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground uppercase">
               {post.format}
             </span>
-            <span className="inline-flex items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-[11px] text-muted-foreground uppercase">
               <Clock className="h-3 w-3" />
-              Pendente
+              {post.status}
             </span>
           </div>
-          <p className="text-sm leading-relaxed text-foreground">{post.caption}</p>
+          <p className="text-sm leading-relaxed text-foreground line-clamp-3">
+            {(post.caption || post.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}
+          </p>
         </div>
-      </div>
-
-      <div className="border-t border-border bg-secondary/30 px-4 py-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => {
-              setApproveOpen((v) => !v);
-              setChangeOpen(false);
-              setScheduleOpen(false);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-foreground hover:bg-accent"
-          >
-            <Check className="h-3.5 w-3.5" />
-            Aprovar
-          </button>
-          <button
-            onClick={() => {
-              setChangeOpen((v) => !v);
-              setApproveOpen(false);
-              setScheduleOpen(false);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-foreground hover:bg-accent"
-          >
-            <Edit3 className="h-3.5 w-3.5" />
-            Pedir Alteração
-          </button>
-          <button
-            onClick={onReject}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-destructive hover:bg-accent"
-          >
-            Recusar
-          </button>
-        </div>
-
-        {approveOpen && (
-          <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
-            <button
-              onClick={onApprovePublish}
-              className="rounded-md bg-foreground px-2.5 py-1 text-xs font-medium text-background hover:opacity-90"
-            >
-              Publicar Agora
-            </button>
-            <button
-              onClick={() => setScheduleOpen((v) => !v)}
-              className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent"
-            >
-              Agendar
-            </button>
-            {scheduleOpen && (
-              <div className="mt-2 flex w-full flex-wrap items-center gap-2">
-                <input
-                  type="datetime-local"
-                  value={when}
-                  onChange={(e) => setWhen(e.target.value)}
-                  className="rounded-md border border-border bg-card px-2 py-1 text-xs outline-none focus:border-foreground"
-                />
-                <button
-                  disabled={!when}
-                  onClick={() => onSchedule(when)}
-                  className="rounded-md bg-foreground px-2.5 py-1 text-xs font-medium text-background hover:opacity-90 disabled:opacity-50"
-                >
-                  Confirmar
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {changeOpen && (
-          <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2 sm:flex-row">
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="O que a IA deve corrigir?"
-              className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs outline-none focus:border-foreground"
-            />
-            <button
-              disabled={!note.trim()}
-              onClick={() => {
-                onRequestChange(note.trim());
-                setNote("");
-                setChangeOpen(false);
-              }}
-              className="rounded-md bg-foreground px-2.5 py-1.5 text-xs font-medium text-background hover:opacity-90 disabled:opacity-50"
-            >
-              Enviar Ajuste
-            </button>
-          </div>
-        )}
       </div>
     </article>
   );
 }
 
-function ScheduledList({ posts }: { posts: ScheduledPost[] }) {
+function ScheduledList({ posts, isLoading, onPreview }: { posts: GeneratedPost[], isLoading: boolean, onPreview: (p: GeneratedPost) => void }) {
+  if (isLoading) {
+    return (
+      <SectionShell>
+        <div className="flex justify-center p-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </SectionShell>
+    );
+  }
+
   if (posts.length === 0) {
     return (
       <SectionShell>
-        <EmptyState title="Nenhum post agendado" description="Aprove um post e escolha 'Agendar' para vê-lo aqui." />
+        <EmptyState
+          title="Nenhum post agendado"
+          description="Aprove um post e escolha 'Agendar' para vê-lo aqui."
+        />
       </SectionShell>
     );
   }
@@ -841,12 +806,22 @@ function ScheduledList({ posts }: { posts: ScheduledPost[] }) {
     <SectionShell>
       <ul className="divide-y divide-border rounded-md border border-border bg-card">
         {posts.map((p) => (
-          <li key={p.id} className="flex items-center gap-3 p-3">
-            <img src={p.image} alt="" className="h-12 w-12 shrink-0 rounded border border-border object-cover" />
+          <li key={p.id} onClick={() => onPreview(p)} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-accent/50 transition-colors">
+            {p.image_url ? (
+              <img
+                src={p.image_url}
+                alt=""
+                className="h-12 w-12 shrink-0 rounded border border-border object-cover"
+              />
+            ) : (
+              <div className="h-12 w-12 shrink-0 rounded border border-border bg-secondary flex items-center justify-center">
+                <Sparkles className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{p.caption}</p>
-              <p className="text-xs text-muted-foreground">
-                {p.format} · {new Date(p.scheduledFor).toLocaleString("pt-BR")}
+              <p className="truncate text-sm">{(p.caption || p.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}</p>
+              <p className="text-xs text-muted-foreground uppercase">
+                {p.format} · {new Date(p.created_at || Date.now()).toLocaleString("pt-BR")}
               </p>
             </div>
             <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -857,11 +832,24 @@ function ScheduledList({ posts }: { posts: ScheduledPost[] }) {
   );
 }
 
-function HistoryList({ posts }: { posts: HistoryPost[] }) {
+function HistoryList({ posts, isLoading, onPreview }: { posts: GeneratedPost[], isLoading: boolean, onPreview: (p: GeneratedPost) => void }) {
+  if (isLoading) {
+    return (
+      <SectionShell>
+        <div className="flex justify-center p-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </SectionShell>
+    );
+  }
+
   if (posts.length === 0) {
     return (
       <SectionShell>
-        <EmptyState title="Sem histórico ainda" description="Posts publicados ou recusados aparecerão aqui." />
+        <EmptyState
+          title="Sem histórico ainda"
+          description="Posts publicados ou recusados aparecerão aqui."
+        />
       </SectionShell>
     );
   }
@@ -869,19 +857,27 @@ function HistoryList({ posts }: { posts: HistoryPost[] }) {
     <SectionShell>
       <ul className="divide-y divide-border rounded-md border border-border bg-card">
         {posts.map((p) => (
-          <li key={p.id} className="flex items-center gap-3 p-3">
-            <img src={p.image} alt="" className="h-12 w-12 shrink-0 rounded border border-border object-cover" />
+          <li key={p.id} onClick={() => onPreview(p)} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-accent/50 transition-colors">
+            {p.image_url ? (
+              <img
+                src={p.image_url}
+                alt=""
+                className="h-12 w-12 shrink-0 rounded border border-border object-cover"
+              />
+            ) : (
+              <div className="h-12 w-12 shrink-0 rounded border border-border bg-secondary flex items-center justify-center">
+                <Sparkles className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{p.caption}</p>
-              <p className="text-xs text-muted-foreground">
-                {p.format} · {new Date(p.date).toLocaleDateString("pt-BR")}
+              <p className="truncate text-sm">{(p.caption || p.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}</p>
+              <p className="text-xs text-muted-foreground uppercase">
+                {p.format} · {new Date(p.created_at || Date.now()).toLocaleDateString("pt-BR")}
               </p>
             </div>
             <span
-              className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${
-                p.status === "Publicado"
-                  ? "bg-accent text-muted-foreground"
-                  : "text-destructive"
+              className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] uppercase ${
+                p.status === "publicado" ? "bg-accent text-muted-foreground" : "text-destructive"
               }`}
             >
               {p.status}
@@ -899,5 +895,249 @@ function EmptyState({ title, description }: { title: string; description: string
       <p className="text-sm font-medium text-foreground">{title}</p>
       <p className="mt-1 text-xs text-muted-foreground">{description}</p>
     </div>
+  );
+}
+
+function PostDetailsModal({
+  post,
+  onClose,
+  onUpdate,
+  onLocalUpdate,
+}: {
+  post: GeneratedPost | null;
+  onClose: () => void;
+  onUpdate: () => void;
+  onLocalUpdate: (p: GeneratedPost) => void;
+}) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+
+  useEffect(() => {
+    setShowDatePicker(false);
+    setScheduleDate("");
+  }, [post?.id]);
+
+  if (!post) return null;
+
+  const formattedPrompt = post.prompt?.replace(/\\n/g, '\n') || "";
+  const formattedCaption = post.caption?.replace(/\\n/g, '\n') || "A IA ainda não gerou a legenda para este post.";
+
+  const handleApprove = async () => {
+    if (!post) return;
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.from("generated_posts").update({ status: "Aprovada" }).eq("id", post.id).select();
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error("Aprovação bloqueada por RLS ou post não encontrado.");
+      onLocalUpdate({ ...post, status: "Aprovada" });
+      onUpdate();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao aprovar post");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!post) return;
+    if (!window.confirm("Tem certeza que deseja recusar e deletar este post permanente?")) return;
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.from("generated_posts").delete().eq("id", post.id).select();
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error("Exclusão bloqueada por RLS ou post não encontrado.");
+      onClose();
+      onUpdate();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao recusar post");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePostNow = async () => {
+    if (!post) return;
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.from("generated_posts").update({ status: "Publicar Agora" }).eq("id", post.id).select();
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error("Publicação bloqueada por RLS ou post não encontrado.");
+      
+      onLocalUpdate({ ...post, status: "Publicar Agora" });
+      onUpdate();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao solicitar publicação instantânea");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleScheduleSubmit = async () => {
+    if (!post || !scheduleDate) return;
+    setIsSubmitting(true);
+    try {
+      const { data: data1, error: error1 } = await supabase.from("post_agendamentos").insert({
+        post_id: post.id,
+        data_publicacao: new Date(scheduleDate).toISOString(),
+      }).select();
+      if (error1) throw error1;
+      if (!data1 || data1.length === 0) throw new Error("Insert em post_agendamentos bloqueado por RLS.");
+
+      const { data: data2, error: error2 } = await supabase.from("generated_posts").update({ agendada: true, status: "Aprovada" }).eq("id", post.id).select();
+      if (error2) throw error2;
+      if (!data2 || data2.length === 0) throw new Error("Update em generated_posts bloqueado por RLS.");
+
+      onLocalUpdate({ ...post, agendada: true, status: "Aprovada" });
+      onUpdate();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao agendar post");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!post} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="fixed inset-0 z-50 w-screen h-[100dvh] max-w-none max-h-none left-0 top-0 translate-x-0 translate-y-0 rounded-none border-none p-4 md:p-6 lg:p-8 flex flex-col bg-background">
+        <DialogHeader className="shrink-0 pb-2 border-b border-border/50">
+          <DialogTitle className="text-xl font-bold">Detalhes da Publicação</DialogTitle>
+        </DialogHeader>
+        
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6 mt-4 overflow-y-auto lg:overflow-hidden">
+          {/* Coluna da Esquerda: Mídia (foco total na imagem/vídeo) */}
+          <div className="w-full lg:w-3/5 xl:w-2/3 flex flex-col gap-4 lg:h-full lg:min-h-0">
+            <div className="flex-1 min-h-[300px] lg:min-h-0 bg-zinc-950 rounded-xl overflow-hidden flex items-center justify-center border border-border/40 relative shadow-inner">
+              {post.video_url ? (
+                <video 
+                  src={post.video_url} 
+                  controls 
+                  autoPlay 
+                  loop 
+                  muted 
+                  className="max-h-full max-w-full object-contain" 
+                />
+              ) : post.image_url ? (
+                <img 
+                  src={post.image_url} 
+                  alt="Imagem do post" 
+                  className="max-h-full max-w-full object-contain" 
+                />
+              ) : (
+                <div className="w-full h-full bg-secondary flex items-center justify-center text-muted-foreground">
+                  <Sparkles className="h-12 w-12" />
+                </div>
+              )}
+            </div>
+            
+            <div className="text-xs text-muted-foreground space-y-1.5 bg-secondary/30 p-4 rounded-xl border border-border/30 shrink-0">
+              <p><strong>ID:</strong> {post.id}</p>
+              <p><strong>Formato:</strong> <span className="uppercase font-semibold text-foreground/80">{post.format}</span></p>
+              <p><strong>Status:</strong> <span className="uppercase font-semibold text-foreground/80">{post.status} {post.agendada && "(Agendada)"}</span></p>
+              <p><strong>Criado em:</strong> {new Date(post.created_at || Date.now()).toLocaleString("pt-BR")}</p>
+            </div>
+          </div>
+
+          {/* Coluna da Direita: Textos e Ações */}
+          <div className="w-full lg:w-2/5 xl:w-1/3 flex flex-col lg:h-full lg:min-h-0">
+            <div className="space-y-6 flex-1 lg:overflow-y-auto pr-0 lg:pr-2 pb-6">
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground/95">
+                  <Wand2 className="h-4 w-4 text-indigo-500" /> Prompt Original
+                </h3>
+                <p className="text-sm text-muted-foreground bg-secondary/30 p-4 rounded-xl border border-border/30 italic leading-relaxed whitespace-pre-wrap animate-fade-in">
+                  {formattedPrompt}
+                </p>
+              </div>
+
+              <div className="space-y-2 flex flex-col flex-1 min-h-[220px]">
+                <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground/95">
+                  <Edit3 className="h-4 w-4 text-indigo-500" /> Legenda
+                </h3>
+                <Textarea 
+                  readOnly
+                  value={formattedCaption} 
+                  className="flex-1 min-h-[180px] lg:min-h-[280px] resize-none text-sm leading-relaxed p-4 bg-secondary/10 border border-border/40 focus:ring-0 focus-visible:ring-0" 
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-border shrink-0 mt-auto bg-background">
+              {post.status === "Aguardando Aprovação" && (
+                <>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button
+                      onClick={handleApprove}
+                      disabled={isSubmitting}
+                      className="flex-1 rounded-md bg-foreground px-3 py-3 text-sm font-semibold text-background hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+                    >
+                      Aprovar
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleReject}
+                    disabled={isSubmitting}
+                    className="w-full rounded-md border border-destructive/20 text-destructive bg-destructive/5 px-3 py-2.5 text-sm font-semibold hover:bg-destructive hover:text-destructive-foreground transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Recusar
+                  </button>
+                </>
+              )}
+
+              {post.status === "Aprovada" && !post.agendada && !showDatePicker && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <button
+                    onClick={() => setShowDatePicker(true)}
+                    className="flex-1 rounded-md bg-indigo-600 text-white px-3 py-3 text-sm font-semibold hover:bg-indigo-700 transition-colors cursor-pointer"
+                  >
+                    Agendar
+                  </button>
+                  <button
+                    onClick={handlePostNow}
+                    className="flex-1 rounded-md border border-border px-3 py-3 text-sm font-semibold hover:bg-accent transition-colors cursor-pointer"
+                  >
+                    Postar Agora
+                  </button>
+                </div>
+              )}
+
+              {showDatePicker && (
+                <div className="space-y-4 mb-2 bg-secondary/20 p-4 rounded-xl border border-border/50">
+                  <h4 className="text-sm font-medium">Selecione a data e hora de postagem:</h4>
+                  <input 
+                    type="datetime-local" 
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleScheduleSubmit}
+                      disabled={!scheduleDate || isSubmitting}
+                      className="flex-1 rounded-md bg-foreground text-background px-3 py-2 text-sm font-medium disabled:opacity-50 cursor-pointer hover:opacity-90"
+                    >
+                      {isSubmitting ? "Salvando..." : "Confirmar"}
+                    </button>
+                    <button
+                      onClick={() => setShowDatePicker(false)}
+                      disabled={isSubmitting}
+                      className="flex-1 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
