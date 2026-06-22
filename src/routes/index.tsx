@@ -23,6 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -229,6 +230,8 @@ function App() {
             <Menu className="h-4 w-4" />
           </button>
           <h1 className="truncate text-sm font-medium">{titles[view]}</h1>
+          <div className="flex-1" />
+          <ThemeToggle />
         </header>
 
         <main className="px-4 py-6 md:px-8 md:py-8">
