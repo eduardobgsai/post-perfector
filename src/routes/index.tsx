@@ -276,6 +276,7 @@ const generateMediaAPI = async (
   imageFile: File | null,
   prompt: string,
   format: string,
+  mediaType: "image" | "video",
 ): Promise<{ videoUrl: string; generatedCaption: string }> => {
   let imageUrl = "";
 
@@ -311,7 +312,14 @@ const generateMediaAPI = async (
   }
 
   // 3. Enviar o ID e os dados para o webhook do n8n
-  const apiFormat = format === "Feed" ? "VIDEO" : format === "Reels" ? "REELS" : format.toUpperCase();
+  const apiFormat =
+    format === "Feed"
+      ? "VIDEO"
+      : format === "Reels"
+        ? "REELS"
+        : format === "Stories"
+          ? "STORY"
+          : format.toUpperCase();
 
   const response = await fetch(GENERATE_WEBHOOK_URL, {
     method: "POST",
@@ -324,6 +332,7 @@ const generateMediaAPI = async (
       prompt,
       image: imageUrl || null,
       timestamp: new Date().toISOString(),
+      media_type: mediaType,
     }),
   });
 
@@ -388,6 +397,7 @@ type FlowState = "idle" | "generating" | "preview" | "success";
 function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => void }) {
   const [step, setStep] = useState<FlowState>("idle");
   const [format, setFormat] = useState<Format>("Feed");
+  const [mediaType, setMediaType] = useState<"image" | "video">("video");
   const [prompt, setPrompt] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -415,7 +425,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
         }
       }, 1500);
 
-      generateMediaAPI(file, prompt, format)
+      generateMediaAPI(file, prompt, format, mediaType)
         .then((result) => {
           clearInterval(interval);
           setTimeout(() => {
@@ -435,7 +445,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
 
       return () => clearInterval(interval);
     }
-  }, [step, file, prompt, format]);
+  }, [step, file, prompt, format, mediaType]);
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -613,7 +623,13 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
           <label className="mb-2 block text-sm font-medium text-foreground">Formato</label>
           <select
             value={format}
-            onChange={(e) => setFormat(e.target.value as Format)}
+            onChange={(e) => {
+              const newFormat = e.target.value as Format;
+              setFormat(newFormat);
+              if (newFormat === "Reels") {
+                setMediaType("video");
+              }
+            }}
             className="w-full rounded-md border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground"
           >
             <option>Feed</option>
@@ -621,6 +637,20 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
             <option>Stories</option>
           </select>
         </div>
+
+        {format === "Stories" && (
+          <div className="animate-in slide-in-from-top-2 fade-in duration-300">
+            <label className="mb-2 block text-sm font-medium text-foreground">Tipo de Mídia</label>
+            <select
+              value={mediaType}
+              onChange={(e) => setMediaType(e.target.value as "image" | "video")}
+              className="w-full rounded-md border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground"
+            >
+              <option value="video">Vídeo</option>
+              <option value="image">Imagem</option>
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="mb-2 block text-sm font-medium text-foreground">
