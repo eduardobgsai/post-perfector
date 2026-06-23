@@ -50,7 +50,7 @@ export type GeneratedPost = {
   agendada?: boolean;
   format: string;
   image_url: string;
-  video_url: string;
+  generated_media: string;
   caption: string;
   created_at: string;
 };
@@ -263,7 +263,7 @@ function SectionShell({ children, max = "max-w-3xl" }: { children: ReactNode; ma
 }
 
 const GENERATE_WEBHOOK_URL =
-  "https://webhook.bgiax.cloud/webhook/6119f397-36f8-48b6-9408-bfacd284f211";
+  "https://n8n.bgiax.cloud/webhook-test/6119f397-36f8-48b6-9408-bfacd284f211";
 
 const LOADING_MESSAGES = [
   "Analisando sua imagem e prompt...",
@@ -271,6 +271,21 @@ const LOADING_MESSAGES = [
   "Escrevendo uma legenda de alta performance...",
   "Finalizando os últimos detalhes...",
 ];
+
+const isVideoUrl = (url: string): boolean => {
+  if (!url) return false;
+  const cleanUrl = url.split("?")[0].toLowerCase();
+  if (
+    cleanUrl.endsWith(".png") ||
+    cleanUrl.endsWith(".jpg") ||
+    cleanUrl.endsWith(".jpeg") ||
+    cleanUrl.endsWith(".webp") ||
+    cleanUrl.endsWith(".gif")
+  ) {
+    return false;
+  }
+  return true;
+};
 
 const generateMediaAPI = async (
   imageFile: File | null,
@@ -314,12 +329,19 @@ const generateMediaAPI = async (
   // 3. Enviar o ID e os dados para o webhook do n8n
   const apiFormat =
     format === "Feed"
-      ? "VIDEO"
+      ? "FEED"
       : format === "Reels"
         ? "REELS"
         : format === "Stories"
-          ? "STORY"
+          ? "STORIES"
           : format.toUpperCase();
+
+  const resolvedMediaType =
+    format === "Reels"
+      ? "video"
+      : format === "Feed"
+        ? "image"
+        : mediaType;
 
   const response = await fetch(GENERATE_WEBHOOK_URL, {
     method: "POST",
@@ -332,7 +354,8 @@ const generateMediaAPI = async (
       prompt,
       image: imageUrl || null,
       timestamp: new Date().toISOString(),
-      media_type: mediaType,
+      media_type: resolvedMediaType,
+      aspect_ratio: format === "Feed" ? "1:1" : "9:16",
     }),
   });
 
@@ -360,7 +383,7 @@ const generateMediaAPI = async (
       try {
         const { data, error } = await supabase
           .from("generated_posts")
-          .select("video_url, caption")
+          .select("generated_media, caption")
           .eq("id", postId)
           .maybeSingle();
 
@@ -369,11 +392,11 @@ const generateMediaAPI = async (
           return; // ignora falhas de rede temporárias e tenta novamente
         }
 
-        // Se o registro foi encontrado e tem o vídeo e legenda preenchidos
-        if (data && data.video_url && data.caption) {
+        // Se o registro foi encontrado e tem a mídia e legenda preenchidos
+        if (data && data.generated_media && data.caption) {
           clearInterval(interval);
           resolve({
-            videoUrl: data.video_url,
+            videoUrl: data.generated_media,
             generatedCaption: data.caption,
           });
         }
@@ -397,7 +420,7 @@ type FlowState = "idle" | "generating" | "preview" | "success";
 function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => void }) {
   const [step, setStep] = useState<FlowState>("idle");
   const [format, setFormat] = useState<Format>("Feed");
-  const [mediaType, setMediaType] = useState<"image" | "video">("video");
+  const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [prompt, setPrompt] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -529,14 +552,22 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
             {/* Video Player */}
             <div className="relative aspect-video sm:aspect-[4/5] bg-black flex items-center justify-center">
               {videoUrl ? (
-                <video
-                  src={videoUrl}
-                  controls
-                  className="max-h-full max-w-full object-contain"
-                  autoPlay
-                  loop
-                  muted
-                />
+                isVideoUrl(videoUrl) ? (
+                  <video
+                    src={videoUrl}
+                    controls
+                    className="max-h-full max-w-full object-contain"
+                    autoPlay
+                    loop
+                    muted
+                  />
+                ) : (
+                  <img
+                    src={videoUrl}
+                    alt="Preview"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                )
               ) : (
                 <Skeleton className="h-full w-full rounded-none" />
               )}
@@ -628,6 +659,8 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
               setFormat(newFormat);
               if (newFormat === "Reels") {
                 setMediaType("video");
+              } else if (newFormat === "Feed") {
+                setMediaType("image");
               }
             }}
             className="w-full rounded-md border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground"
@@ -1047,15 +1080,23 @@ function PostDetailsModal({
           {/* Coluna da Esquerda: Mídia (foco total na imagem/vídeo) */}
           <div className="w-full lg:w-3/5 xl:w-2/3 flex flex-col gap-4 lg:h-full lg:min-h-0">
             <div className="flex-1 min-h-[300px] lg:min-h-0 bg-zinc-950 rounded-xl overflow-hidden flex items-center justify-center border border-border/40 relative shadow-inner">
-              {post.video_url ? (
-                <video 
-                  src={post.video_url} 
-                  controls 
-                  autoPlay 
-                  loop 
-                  muted 
-                  className="max-h-full max-w-full object-contain" 
-                />
+              {post.generated_media ? (
+                isVideoUrl(post.generated_media) ? (
+                  <video 
+                    src={post.generated_media} 
+                    controls 
+                    autoPlay 
+                    loop 
+                    muted 
+                    className="max-h-full max-w-full object-contain" 
+                  />
+                ) : (
+                  <img 
+                    src={post.generated_media} 
+                    alt="Mídia gerada" 
+                    className="max-h-full max-w-full object-contain" 
+                  />
+                )
               ) : post.image_url ? (
                 <img 
                   src={post.image_url} 
