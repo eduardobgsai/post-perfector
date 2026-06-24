@@ -17,6 +17,8 @@ import {
   Send,
   CheckCircle2,
   Instagram,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,7 +43,7 @@ export const Route = createFileRoute("/")({
 
 type View = "new" | "review" | "scheduled" | "history";
 
-type Format = "Feed" | "Reels" | "Stories";
+type Format = "Feed" | "Reels" | "Stories" | "Carousel";
 
 export type GeneratedPost = {
   id: string;
@@ -51,8 +53,10 @@ export type GeneratedPost = {
   format: string;
   image_url: string;
   generated_media: string;
+  carrossel_items?: { url: string; ordem: number }[];
   caption: string;
   created_at: string;
+  proporcao?: string;
 };
 
 const PLACEHOLDER_IMG =
@@ -78,7 +82,7 @@ function App() {
     try {
       const { data, error } = await supabase
         .from("generated_posts")
-        .select("*")
+        .select("*, carrossel_items:post_carrossel_midias(url:media_url, ordem)")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -292,6 +296,7 @@ const generateMediaAPI = async (
   prompt: string,
   format: string,
   mediaType: "image" | "video",
+  slideCount?: number,
 ): Promise<{ videoUrl: string; generatedCaption: string }> => {
   let imageUrl = "";
 
@@ -355,7 +360,8 @@ const generateMediaAPI = async (
       image: imageUrl || null,
       timestamp: new Date().toISOString(),
       media_type: resolvedMediaType,
-      aspect_ratio: format === "Feed" ? "1:1" : "9:16",
+      aspect_ratio: (format === "Feed" || format === "Carousel") ? "1:1" : "9:16",
+      ...(format === "Carousel" && slideCount ? { slide_count: slideCount } : {}),
     }),
   });
 
@@ -383,7 +389,7 @@ const generateMediaAPI = async (
       try {
         const { data, error } = await supabase
           .from("generated_posts")
-          .select("generated_media, caption")
+          .select("status, generated_media, caption, format, carrossel_items:post_carrossel_midias(url:media_url, ordem)")
           .eq("id", postId)
           .maybeSingle();
 
@@ -392,12 +398,19 @@ const generateMediaAPI = async (
           return; // ignora falhas de rede temporárias e tenta novamente
         }
 
-        // Se o registro foi encontrado e tem a mídia e legenda preenchidos
-        if (data && data.generated_media && data.caption) {
+        // Se o registro foi encontrado e o status já avançou para Aguardando Aprovação
+        if (data && data.status === "Aguardando Aprovação") {
           clearInterval(interval);
+          
+          let previewMediaUrl = data.generated_media;
+          if (data.format?.toUpperCase() === "CAROUSEL" && data.carrossel_items && data.carrossel_items.length > 0) {
+             const sorted = [...data.carrossel_items].sort((a, b) => a.ordem - b.ordem);
+             previewMediaUrl = sorted[0].url;
+          }
+
           resolve({
-            videoUrl: data.generated_media,
-            generatedCaption: data.caption,
+            videoUrl: previewMediaUrl || "",
+            generatedCaption: data.caption || "",
           });
         }
       } catch (err) {
@@ -421,6 +434,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   const [step, setStep] = useState<FlowState>("idle");
   const [format, setFormat] = useState<Format>("Feed");
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
+  const [slideCount, setSlideCount] = useState<number>(3);
   const [prompt, setPrompt] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -439,16 +453,21 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   useEffect(() => {
     if (step === "generating") {
       let msgIndex = 0;
-      setLoadingMessage(LOADING_MESSAGES[0]);
+      
+      const messages = format === "Carousel" 
+        ? ["Analisando sua imagem e prompt...", "Estruturando os slides do carrossel...", "Gerando imagens visualmente impactantes...", "Escrevendo uma legenda de alta conversão...", "Sincronizando mídias e finalizando..."]
+        : LOADING_MESSAGES;
+
+      setLoadingMessage(messages[0]);
 
       const interval = setInterval(() => {
         msgIndex++;
-        if (msgIndex < LOADING_MESSAGES.length) {
-          setLoadingMessage(LOADING_MESSAGES[msgIndex]);
+        if (msgIndex < messages.length) {
+          setLoadingMessage(messages[msgIndex]);
         }
-      }, 1500);
+      }, format === "Carousel" ? 3500 : 1500);
 
-      generateMediaAPI(file, prompt, format, mediaType)
+      generateMediaAPI(file, prompt, format, mediaType, slideCount)
         .then((result) => {
           clearInterval(interval);
           setTimeout(() => {
@@ -468,7 +487,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
 
       return () => clearInterval(interval);
     }
-  }, [step, file, prompt, format, mediaType]);
+  }, [step, file, prompt, format, mediaType, slideCount]);
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -668,8 +687,27 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
             <option>Feed</option>
             <option>Reels</option>
             <option>Stories</option>
+            <option>Carousel</option>
           </select>
         </div>
+
+        {format === "Carousel" && (
+          <div className="animate-in slide-in-from-top-2 fade-in duration-300">
+            <label className="mb-2 block text-sm font-medium text-foreground">Quantidade de Slides</label>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min="2"
+                max="10"
+                value={slideCount}
+                onChange={(e) => setSlideCount(parseInt(e.target.value))}
+                className="w-full accent-foreground"
+              />
+              <span className="min-w-[40px] text-center font-medium text-lg">{slideCount}</span>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">Escolha entre 2 e 10 slides (recomendado: 3 a 5)</p>
+          </div>
+        )}
 
         {format === "Stories" && (
           <div className="animate-in slide-in-from-top-2 fade-in duration-300">
@@ -817,7 +855,18 @@ function ReviewCard({ post, onPreview }: { post: GeneratedPost; onPreview: () =>
       className="overflow-hidden rounded-md border border-border bg-card cursor-pointer hover:border-foreground/50 transition-colors"
     >
       <div className="flex flex-col gap-4 p-4 sm:flex-row">
-        {post.image_url ? (
+        {post.carrossel_items && post.carrossel_items.length > 0 ? (
+          <div className="relative h-40 w-full shrink-0 sm:h-32 sm:w-32">
+            <img
+              src={post.carrossel_items[0].url}
+              alt="Pré-visualização do carrossel"
+              className="h-full w-full rounded-md border border-border object-cover"
+            />
+            <div className="absolute top-1.5 right-1.5 bg-black/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded backdrop-blur-sm shadow-sm">
+              1/{post.carrossel_items.length}
+            </div>
+          </div>
+        ) : post.image_url ? (
           <img
             src={post.image_url}
             alt="Pré-visualização do post"
@@ -873,7 +922,18 @@ function ScheduledList({ posts, isLoading, onPreview }: { posts: GeneratedPost[]
       <ul className="divide-y divide-border rounded-md border border-border bg-card">
         {posts.map((p) => (
           <li key={p.id} onClick={() => onPreview(p)} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-accent/50 transition-colors">
-            {p.image_url ? (
+            {p.carrossel_items && p.carrossel_items.length > 0 ? (
+              <div className="relative h-12 w-12 shrink-0">
+                <img
+                  src={p.carrossel_items[0].url}
+                  alt=""
+                  className="h-full w-full rounded border border-border object-cover"
+                />
+                <div className="absolute -top-1 -right-1 bg-black text-white text-[8px] font-bold px-1 rounded-full shadow-sm">
+                  {p.carrossel_items.length}
+                </div>
+              </div>
+            ) : p.image_url ? (
               <img
                 src={p.image_url}
                 alt=""
@@ -924,7 +984,18 @@ function HistoryList({ posts, isLoading, onPreview }: { posts: GeneratedPost[], 
       <ul className="divide-y divide-border rounded-md border border-border bg-card">
         {posts.map((p) => (
           <li key={p.id} onClick={() => onPreview(p)} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-accent/50 transition-colors">
-            {p.image_url ? (
+            {p.carrossel_items && p.carrossel_items.length > 0 ? (
+              <div className="relative h-12 w-12 shrink-0">
+                <img
+                  src={p.carrossel_items[0].url}
+                  alt=""
+                  className="h-full w-full rounded border border-border object-cover"
+                />
+                <div className="absolute -top-1 -right-1 bg-black text-white text-[8px] font-bold px-1 rounded-full shadow-sm">
+                  {p.carrossel_items.length}
+                </div>
+              </div>
+            ) : p.image_url ? (
               <img
                 src={p.image_url}
                 alt=""
@@ -978,10 +1049,12 @@ function PostDetailsModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
+  const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
     setShowDatePicker(false);
     setScheduleDate("");
+    setCurrentSlide(0);
   }, [post?.id]);
 
   if (!post) return null;
@@ -1078,9 +1151,52 @@ function PostDetailsModal({
         
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6 mt-4 overflow-y-auto lg:overflow-hidden">
           {/* Coluna da Esquerda: Mídia (foco total na imagem/vídeo) */}
-          <div className="w-full lg:w-3/5 xl:w-2/3 flex flex-col gap-4 lg:h-full lg:min-h-0">
-            <div className="flex-1 min-h-[300px] lg:min-h-0 bg-zinc-950 rounded-xl overflow-hidden flex items-center justify-center border border-border/40 relative shadow-inner">
-              {post.generated_media ? (
+          <div className="w-full lg:w-3/5 xl:w-2/3 flex flex-col gap-4 lg:h-full lg:min-h-0 items-center justify-center">
+            <div className="flex-1 w-full min-h-0 flex items-center justify-center relative bg-black/5 rounded-xl border border-border/40 p-2 lg:p-4">
+              {post.format?.toUpperCase() === "CAROUSEL" && post.carrossel_items && post.carrossel_items.length > 0 ? (
+                (() => {
+                  const sortedItems = [...post.carrossel_items].sort((a, b) => a.ordem - b.ordem);
+                  return (
+                    <div className="w-full h-full relative flex items-center justify-center">
+                      <img 
+                        src={sortedItems[currentSlide].url} 
+                        alt={`Slide ${sortedItems[currentSlide].ordem}`} 
+                        className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
+                      />
+                      <div className="absolute top-2 right-2 md:top-4 md:right-4 bg-black/60 text-white text-xs font-medium px-2.5 py-1 rounded-full backdrop-blur-md shadow-sm border border-white/10 z-10">
+                        {currentSlide + 1} / {sortedItems.length}
+                      </div>
+                      
+                      {currentSlide > 0 && (
+                        <button 
+                          onClick={() => setCurrentSlide(c => c - 1)}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 text-white hover:bg-black/70 transition-colors backdrop-blur-md shadow-lg"
+                        >
+                          <ChevronLeft className="h-6 w-6" />
+                        </button>
+                      )}
+                      
+                      {currentSlide < sortedItems.length - 1 && (
+                        <button 
+                          onClick={() => setCurrentSlide(c => c + 1)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 text-white hover:bg-black/70 transition-colors backdrop-blur-md shadow-lg"
+                        >
+                          <ChevronRight className="h-6 w-6" />
+                        </button>
+                      )}
+
+                      <div className="absolute bottom-2 md:bottom-4 left-0 right-0 flex justify-center gap-2 z-10">
+                         {sortedItems.map((_, idx) => (
+                           <div 
+                             key={idx} 
+                             className={`w-2 h-2 rounded-full backdrop-blur-sm transition-colors shadow-sm ${idx === currentSlide ? 'bg-white' : 'bg-white/40'}`} 
+                           />
+                         ))}
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : post.generated_media ? (
                 isVideoUrl(post.generated_media) ? (
                   <video 
                     src={post.generated_media} 
@@ -1088,32 +1204,32 @@ function PostDetailsModal({
                     autoPlay 
                     loop 
                     muted 
-                    className="max-h-full max-w-full object-contain" 
+                    className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
                   />
                 ) : (
                   <img 
                     src={post.generated_media} 
                     alt="Mídia gerada" 
-                    className="max-h-full max-w-full object-contain" 
+                    className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
                   />
                 )
               ) : post.image_url ? (
                 <img 
                   src={post.image_url} 
                   alt="Imagem do post" 
-                  className="max-h-full max-w-full object-contain" 
+                  className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
                 />
               ) : (
-                <div className="w-full h-full bg-secondary flex items-center justify-center text-muted-foreground">
-                  <Sparkles className="h-12 w-12" />
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground bg-secondary/20 rounded-lg">
+                  <Sparkles className="h-10 w-10 opacity-50" />
                 </div>
               )}
             </div>
             
-            <div className="text-xs text-muted-foreground space-y-1.5 bg-secondary/30 p-4 rounded-xl border border-border/30 shrink-0">
+            <div className="w-full text-xs text-muted-foreground space-y-2 bg-secondary/30 p-4 rounded-xl border border-border/50 shrink-0 text-left">
               <p><strong>ID:</strong> {post.id}</p>
-              <p><strong>Formato:</strong> <span className="uppercase font-semibold text-foreground/80">{post.format}</span></p>
-              <p><strong>Status:</strong> <span className="uppercase font-semibold text-foreground/80">{post.status} {post.agendada && "(Agendada)"}</span></p>
+              <p><strong>Formato:</strong> <span className="uppercase font-semibold text-foreground/90">{post.format}</span></p>
+              <p><strong>Status:</strong> <span className="uppercase font-semibold text-foreground/90">{post.status} {post.agendada && "(Agendada)"}</span></p>
               <p><strong>Criado em:</strong> {new Date(post.created_at || Date.now()).toLocaleString("pt-BR")}</p>
             </div>
           </div>
