@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, type ReactNode, useEffect } from "react";
 import {
   PenSquare,
@@ -16,16 +16,24 @@ import {
   Wand2,
   Send,
   CheckCircle2,
-  Instagram,
-  ChevronLeft,
   ChevronRight,
+  ChevronLeft,
+  LogOut,
+  Palette,
+  Video,
+  Image,
+  Layers,
+  Type,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
+import { MediaKit } from "@/components/MediaKit";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AnimatedIcon } from "@/components/AnimatedIcon";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -41,7 +49,7 @@ export const Route = createFileRoute("/")({
   component: App,
 });
 
-type View = "new" | "review" | "scheduled" | "history";
+type View = "new" | "review" | "scheduled" | "history" | "media-kit";
 
 type Format = "Feed" | "Reels" | "Stories" | "Carousel";
 
@@ -66,8 +74,18 @@ const PLACEHOLDER_IMG =
   );
 
 function App() {
+  const { user, isLoading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate({ to: "/login" });
+    }
+  }, [user, authLoading, navigate]);
+
   const [view, setView] = useState<View>("review");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
   const [isLoading, setIsLoading] = useState(true);
   const [reviewPosts, setReviewPosts] = useState<GeneratedPost[]>([]);
@@ -90,7 +108,14 @@ function App() {
       } else if (data) {
         setReviewPosts(data.filter((p) => p.status === "Aguardando Aprovação"));
         setScheduled(data.filter((p) => p.status === "Aprovada" && p.agendada === true));
-        setHistory(data.filter((p) => p.status === "Postada" || p.status === "Publicar Agora" || (p.status === "Aprovada" && !p.agendada)));
+        setHistory(
+          data.filter(
+            (p) =>
+              p.status === "Postada" ||
+              p.status === "Publicar Agora" ||
+              (p.status === "Aprovada" && !p.agendada),
+          ),
+        );
       }
     } catch (err) {
       console.error(err);
@@ -100,14 +125,17 @@ function App() {
   };
 
   useEffect(() => {
-    fetchPosts();
-  }, [view]);
+    if (user) {
+      fetchPosts();
+    }
+  }, [view, user]);
 
   const navItems: { id: View; label: string; icon: typeof Inbox; count?: number }[] = [
     { id: "new", label: "Novo Post", icon: PenSquare },
     { id: "review", label: "Aguardando Revisão", icon: Inbox, count: reviewPosts.length },
     { id: "scheduled", label: "Agendados", icon: CalendarClock, count: scheduled.length },
     { id: "history", label: "Histórico", icon: History },
+    { id: "media-kit", label: "Mídia Kit", icon: Palette },
   ];
 
   const titles: Record<View, string> = {
@@ -115,6 +143,7 @@ function App() {
     review: "Aguardando Revisão",
     scheduled: "Agendados",
     history: "Histórico",
+    "media-kit": "Mídia Kit",
   };
 
   const handleApprovePublish = (post: GeneratedPost) => {
@@ -173,16 +202,17 @@ function App() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 transform border-r border-border bg-secondary/40 transition-transform md:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 w-64 transform border-r border-border bg-secondary/40 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          } ${desktopSidebarOpen ? "md:translate-x-0" : "md:-translate-x-full"}`}
       >
         <div className="flex h-14 items-center justify-between px-4">
-          <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-            <div className="grid h-6 w-6 place-items-center rounded-md bg-foreground text-background">
-              <Sparkles className="h-3.5 w-3.5" />
-            </div>
-            Postly
+          <div className="flex items-center text-base font-serif font-bold tracking-tight text-foreground/90">
+            <img
+              src="/logo.png"
+              alt="Post Perfector Logo"
+              className="h-20 w-20 object-contain dark:invert"
+            />
+            Post Perfector
           </div>
           <button
             className="rounded-md p-1 text-muted-foreground hover:bg-accent md:hidden"
@@ -203,14 +233,15 @@ function App() {
                   setView(item.id);
                   setSidebarOpen(false);
                 }}
-                className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors ${
-                  active
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                }`}
+                className={`group flex w-full items-center justify-between rounded-sm px-2 py-2 text-sm transition-colors duration-300 ease-out ${active
+                  ? "bg-foreground/15 text-foreground font-semibold"
+                  : "text-foreground/80 font-medium hover:bg-foreground/10 hover:text-foreground"
+                  }`}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <Icon className="h-4 w-4 shrink-0" />
+                  <Icon
+                    className={`h-4 w-4 shrink-0 transition-transform duration-300 ease-out stroke-[2.5] ${!active ? "group-hover:animate-icon-wobble text-foreground" : ""}`}
+                  />
                   <span className="truncate">{item.label}</span>
                 </span>
                 {typeof item.count === "number" && item.count > 0 && (
@@ -222,10 +253,22 @@ function App() {
             );
           })}
         </nav>
+
+        <div className="absolute bottom-6 left-0 right-0 px-3">
+          <button
+            onClick={signOut}
+            className="group flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm transition-colors duration-300 ease-out text-foreground/80 font-medium hover:bg-destructive/20 hover:text-destructive"
+          >
+            <LogOut className="h-4 w-4 shrink-0 transition-transform duration-300 ease-out group-hover:animate-icon-wobble stroke-[2.5]" />
+            <span className="truncate">Sair da Conta</span>
+          </button>
+        </div>
       </aside>
 
-      <div className="md:pl-64">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur md:px-8">
+      <div className={`transition-all duration-300 ${desktopSidebarOpen ? "md:pl-64" : "md:pl-0"}`}>
+        <header
+          className={`sticky top-0 z-20 flex h-14 items-center gap-3 px-4 md:px-8 ${view === "new" ? "bg-transparent" : "border-b border-border bg-background/80 backdrop-blur"}`}
+        >
           <button
             className="rounded-md p-1.5 text-muted-foreground hover:bg-accent md:hidden"
             onClick={() => setSidebarOpen(true)}
@@ -233,7 +276,18 @@ function App() {
           >
             <Menu className="h-4 w-4" />
           </button>
-          <h1 className="truncate text-sm font-medium">{titles[view]}</h1>
+          <button
+            className="hidden rounded-md p-1.5 text-muted-foreground hover:bg-accent md:block"
+            onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
+            aria-label="Alternar menu"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+          {view !== "new" && (
+            <h1 className="truncate text-lg font-serif font-semibold text-foreground/90">
+              {titles[view]}
+            </h1>
+          )}
           <div className="flex-1" />
           <ThemeToggle />
         </header>
@@ -247,14 +301,27 @@ function App() {
               onPreview={(post) => setSelectedPost(post)}
             />
           )}
-          {view === "scheduled" && <ScheduledList posts={scheduled} isLoading={isLoading} onPreview={(post) => setSelectedPost(post)} />}
-          {view === "history" && <HistoryList posts={history} isLoading={isLoading} onPreview={(post) => setSelectedPost(post)} />}
+          {view === "scheduled" && (
+            <ScheduledList
+              posts={scheduled}
+              isLoading={isLoading}
+              onPreview={(post) => setSelectedPost(post)}
+            />
+          )}
+          {view === "history" && (
+            <HistoryList
+              posts={history}
+              isLoading={isLoading}
+              onPreview={(post) => setSelectedPost(post)}
+            />
+          )}
+          {view === "media-kit" && <MediaKit />}
         </main>
       </div>
 
-      <PostDetailsModal 
-        post={selectedPost} 
-        onClose={() => setSelectedPost(null)} 
+      <PostDetailsModal
+        post={selectedPost}
+        onClose={() => setSelectedPost(null)}
         onUpdate={() => fetchPosts()}
         onLocalUpdate={(updatedPost) => setSelectedPost(updatedPost)}
       />
@@ -296,7 +363,12 @@ const generateMediaAPI = async (
   prompt: string,
   format: string,
   mediaType: "image" | "video",
+  userId: string,
   slideCount?: number,
+  brandColors?: any[],
+  typography?: any,
+  logoUrl?: string,
+  useText?: boolean
 ): Promise<{ videoUrl: string; generatedCaption: string }> => {
   let imageUrl = "";
 
@@ -305,10 +377,10 @@ const generateMediaAPI = async (
     typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0;
-          const v = c === "x" ? r : (r & 0x3) | 0x8;
-          return v.toString(16);
-        });
+        const r = (Math.random() * 16) | 0;
+        const v = c === "x" ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
 
   // 2. Upload da imagem para o Supabase Storage se houver
   if (imageFile) {
@@ -341,12 +413,7 @@ const generateMediaAPI = async (
           ? "STORIES"
           : format.toUpperCase();
 
-  const resolvedMediaType =
-    format === "Reels"
-      ? "video"
-      : format === "Feed"
-        ? "image"
-        : mediaType;
+  const resolvedMediaType = format === "Reels" ? "video" : format === "Feed" ? "image" : mediaType;
 
   const response = await fetch(GENERATE_WEBHOOK_URL, {
     method: "POST",
@@ -355,13 +422,28 @@ const generateMediaAPI = async (
     },
     body: JSON.stringify({
       id: postId,
+      user_id: userId,
       format: apiFormat,
       prompt,
       image: imageUrl || null,
       timestamp: new Date().toISOString(),
       media_type: resolvedMediaType,
-      aspect_ratio: (format === "Feed" || format === "Carousel") ? "1:1" : "9:16",
+      aspect_ratio: useText 
+        ? (format === "Feed" || format === "Carousel" ? "portrait_4_3" : "portrait_16_9")
+        : (format === "Feed" || format === "Carousel" ? "1:1" : "9:16"),
       ...(format === "Carousel" && slideCount ? { slide_count: slideCount } : {}),
+      ...(brandColors && brandColors.length > 0 ? { brand_colors: brandColors } : {}),
+      ...(typography ? {
+        typography: typography,
+        fontfamily: typography.primary_font,
+        fontweight: typography.primary_font_weight
+      } : {
+        typography: { primary_font: "Roboto", primary_font_weight: "regular" },
+        fontfamily: "Roboto",
+        fontweight: "regular"
+      }),
+      ...(logoUrl ? { logo_url: logoUrl } : {}),
+      Text: useText !== undefined ? useText : true,
     }),
   });
 
@@ -389,7 +471,9 @@ const generateMediaAPI = async (
       try {
         const { data, error } = await supabase
           .from("generated_posts")
-          .select("status, generated_media, caption, format, carrossel_items:post_carrossel_midias(url:media_url, ordem)")
+          .select(
+            "status, generated_media, caption, format, carrossel_items:post_carrossel_midias(url:media_url, ordem)",
+          )
           .eq("id", postId)
           .maybeSingle();
 
@@ -401,11 +485,15 @@ const generateMediaAPI = async (
         // Se o registro foi encontrado e o status já avançou para Aguardando Aprovação
         if (data && data.status === "Aguardando Aprovação") {
           clearInterval(interval);
-          
+
           let previewMediaUrl = data.generated_media;
-          if (data.format?.toUpperCase() === "CAROUSEL" && data.carrossel_items && data.carrossel_items.length > 0) {
-             const sorted = [...data.carrossel_items].sort((a, b) => a.ordem - b.ordem);
-             previewMediaUrl = sorted[0].url;
+          if (
+            data.format?.toUpperCase() === "CAROUSEL" &&
+            data.carrossel_items &&
+            data.carrossel_items.length > 0
+          ) {
+            const sorted = [...data.carrossel_items].sort((a, b) => a.ordem - b.ordem);
+            previewMediaUrl = sorted[0].url;
           }
 
           resolve({
@@ -442,6 +530,65 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Mídia Kit
+  const [brandColors, setBrandColors] = useState<any[]>([]);
+  const [showMediaKitDropdown, setShowMediaKitDropdown] = useState(false);
+  const [showColorsSubmenu, setShowColorsSubmenu] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [typography, setTypography] = useState<any>(null);
+  const [useTypography, setUseTypography] = useState(true);
+  const [logos, setLogos] = useState<any[]>([]);
+  const [showLogosSubmenu, setShowLogosSubmenu] = useState(false);
+  const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null);
+  const [useText, setUseText] = useState(true);
+  const { user } = useAuth();
+
+  const fetchBrandColors = async () => {
+    if (!user) return;
+    const [colorsRes, foldersRes, typoRes, logosRes] = await Promise.all([
+      supabase.from("brand_colors").select("*").order("sort_order", { ascending: true }),
+      supabase.from("brand_color_folders").select("*").order("sort_order", { ascending: true }),
+      supabase.from("brand_typography").select("*").eq("user_id", user.id).maybeSingle(),
+      supabase.from("brand_logos").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
+    ]);
+
+    const colors = colorsRes.data || [];
+    const folders = foldersRes.data || [];
+    setLogos(logosRes.data || []);
+
+    const rootItems = [
+      ...folders.map((f) => ({ type: "folder", id: f.id, name: f.name, sort_order: f.sort_order })),
+      ...colors
+        .filter((c) => !c.folder_id)
+        .map((c) => ({ type: "color", id: c.id, hex: c.hex, sort_order: c.sort_order })),
+    ].sort((a, b) => a.sort_order - b.sort_order);
+
+    const structuredColors = rootItems.map((item) => {
+      if (item.type === "folder") {
+        const children = colors
+          .filter((c) => c.folder_id === item.id)
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((c) => c.hex);
+        return { type: "folder", id: item.id, name: item.name, colors: children };
+      }
+      return { type: "color", id: item.id, hex: item.hex };
+    });
+
+    setBrandColors(structuredColors);
+    if (typoRes.data) {
+      setTypography({
+        primary_font: typoRes.data.primary_font,
+        primary_font_weight: typoRes.data.primary_font_weight,
+        secondary_font: typoRes.data.secondary_font,
+        secondary_font_weight: typoRes.data.secondary_font_weight,
+      });
+    }
+  };
+
+  useEffect(() => {
+    fetchBrandColors();
+  }, [user]);
+
   // Estados: generating
   const [loadingMessage, setLoadingMessage] = useState("");
 
@@ -453,21 +600,46 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   useEffect(() => {
     if (step === "generating") {
       let msgIndex = 0;
-      
-      const messages = format === "Carousel" 
-        ? ["Analisando sua imagem e prompt...", "Estruturando os slides do carrossel...", "Gerando imagens visualmente impactantes...", "Escrevendo uma legenda de alta conversão...", "Sincronizando mídias e finalizando..."]
-        : LOADING_MESSAGES;
+
+      const messages =
+        format === "Carousel"
+          ? [
+            "Analisando sua imagem e prompt...",
+            "Estruturando os slides do carrossel...",
+            "Gerando imagens visualmente impactantes...",
+            "Escrevendo uma legenda de alta conversão...",
+            "Sincronizando mídias e finalizando...",
+          ]
+          : LOADING_MESSAGES;
 
       setLoadingMessage(messages[0]);
 
-      const interval = setInterval(() => {
-        msgIndex++;
-        if (msgIndex < messages.length) {
-          setLoadingMessage(messages[msgIndex]);
-        }
-      }, format === "Carousel" ? 3500 : 1500);
+      const interval = setInterval(
+        () => {
+          msgIndex++;
+          if (msgIndex < messages.length) {
+            setLoadingMessage(messages[msgIndex]);
+          }
+        },
+        format === "Carousel" ? 3500 : 1500,
+      );
 
-      generateMediaAPI(file, prompt, format, mediaType, slideCount)
+      const selectedLogoUrl = selectedLogoId ? logos.find((l) => l.id === selectedLogoId)?.url : undefined;
+
+      generateMediaAPI(
+        file,
+        prompt,
+        format,
+        mediaType,
+        user?.id || "",
+        slideCount,
+        selectedFolderId
+          ? brandColors.filter((c: any) => c.type === "folder" && c.id === selectedFolderId)
+          : undefined,
+        useTypography ? typography : undefined,
+        selectedLogoUrl,
+        useText
+      )
         .then((result) => {
           clearInterval(interval);
           setTimeout(() => {
@@ -525,7 +697,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
         `}</style>
         <div className="relative overflow-hidden rounded-3xl border border-border bg-card/50 shadow-sm transition-all">
           <div className="absolute inset-0 z-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 animate-gradient-xy opacity-80" />
-          
+
           <div className="relative z-10 flex flex-col items-center justify-center space-y-8 py-24 text-center animate-in fade-in duration-500">
             <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-background/60 shadow-md backdrop-blur-md">
               <Loader2 className="absolute h-12 w-12 animate-spin text-primary/80" />
@@ -552,7 +724,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold tracking-tight">Revisão Final</h2>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              <Instagram className="h-3.5 w-3.5" /> Instagram {format}
+              <AnimatedIcon name="instagram" className="h-3.5 w-3.5" /> Instagram {format}
             </span>
           </div>
 
@@ -661,150 +833,306 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
 
   // Estado: idle
   return (
-    <SectionShell>
+    <div className="flex flex-col items-center justify-center min-h-[75vh] max-w-3xl mx-auto px-4 w-full animate-in fade-in duration-500">
+      <div className="flex flex-col items-center mb-10 text-center">
+        <h1 className="text-3xl md:text-4xl font-serif text-foreground/90 flex items-center justify-center gap-3">
+          O que vamos criar hoje?
+        </h1>
+      </div>
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
           if (prompt.trim()) setStep("generating");
         }}
-        className="space-y-6"
+        className="w-full relative"
       >
-        <div>
-          <label className="mb-2 block text-sm font-medium text-foreground">Formato</label>
-          <select
-            value={format}
-            onChange={(e) => {
-              const newFormat = e.target.value as Format;
-              setFormat(newFormat);
-              if (newFormat === "Reels") {
-                setMediaType("video");
-              } else if (newFormat === "Feed") {
-                setMediaType("image");
-              }
-            }}
-            className="w-full rounded-md border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground"
-          >
-            <option>Feed</option>
-            <option>Reels</option>
-            <option>Stories</option>
-            <option>Carousel</option>
-          </select>
-        </div>
-
-        {format === "Carousel" && (
-          <div className="animate-in slide-in-from-top-2 fade-in duration-300">
-            <label className="mb-2 block text-sm font-medium text-foreground">Quantidade de Slides</label>
-            <div className="flex items-center gap-4">
-              <input
-                type="range"
-                min="2"
-                max="10"
-                value={slideCount}
-                onChange={(e) => setSlideCount(parseInt(e.target.value))}
-                className="w-full accent-foreground"
-              />
-              <span className="min-w-[40px] text-center font-medium text-lg">{slideCount}</span>
-            </div>
-            <p className="mt-1.5 text-xs text-muted-foreground">Escolha entre 2 e 10 slides (recomendado: 3 a 5)</p>
-          </div>
-        )}
-
-        {format === "Stories" && (
-          <div className="animate-in slide-in-from-top-2 fade-in duration-300">
-            <label className="mb-2 block text-sm font-medium text-foreground">Tipo de Mídia</label>
-            <select
-              value={mediaType}
-              onChange={(e) => setMediaType(e.target.value as "image" | "video")}
-              className="w-full rounded-md border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground"
-            >
-              <option value="video">Vídeo</option>
-              <option value="image">Imagem</option>
-            </select>
-          </div>
-        )}
-
-        <div>
-          <label className="mb-2 block text-sm font-medium text-foreground">
-            Imagem Base (Opcional)
-          </label>
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              const f = e.dataTransfer.files?.[0];
-              if (f) {
-                setFileName(f.name);
-                setFile(f);
-              }
-            }}
-            onClick={() => inputRef.current?.click()}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-12 text-center transition-all duration-200 ${
-              dragging
-                ? "border-foreground bg-accent/50"
-                : "border-border bg-card hover:bg-accent/30 hover:border-foreground/50"
-            }`}
-          >
-            <Upload className="mb-3 h-6 w-6 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">
-              {fileName ?? "Arraste uma imagem ou clique para selecionar"}
-            </p>
-            <p className="mt-1.5 text-xs text-muted-foreground">PNG, JPG até 10MB</p>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  setFileName(f.name);
-                  setFile(f);
-                } else {
-                  setFileName(null);
-                  setFile(null);
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-medium text-foreground">Prompt da IA</label>
+        <div className="bg-card rounded-2xl border border-border shadow-sm p-3 relative flex flex-col focus-within:border-foreground/30 focus-within:shadow-md transition-all duration-300">
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            rows={5}
-            placeholder="Descreva detalhadamente o post que você quer gerar…"
-            className="w-full resize-none rounded-md border border-border bg-card px-3 py-3 text-sm outline-none focus:border-foreground leading-relaxed"
+            rows={4}
+            placeholder="Como posso te ajudar hoje?"
+            className="w-full resize-none bg-transparent px-3 py-2 text-base md:text-lg outline-none placeholder:text-muted-foreground/60 leading-relaxed text-foreground"
           />
+
+          <div className="flex items-center justify-between mt-2 pt-2">
+            <div className="flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    setFileName(f.name);
+                    setFile(f);
+                  } else {
+                    setFileName(null);
+                    setFile(null);
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className={`flex items-center justify-center h-10 w-10 rounded-full transition-colors ${file ? "bg-primary/10 text-primary" : "bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                title={fileName || "Anexar Imagem"}
+              >
+                <Upload className="h-5 w-5" />
+              </button>
+
+              {file && (
+                <span className="text-xs text-muted-foreground max-w-[120px] truncate">
+                  {fileName}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={!prompt.trim()}
+              className="flex items-center justify-center h-10 w-10 rounded-full bg-foreground text-background transition-transform hover:scale-105 disabled:opacity-30 disabled:hover:scale-100"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {error && (
-          <p
-            className="text-sm text-destructive font-medium bg-destructive/10 px-3 py-2 rounded-md"
-            role="alert"
-          >
+          <p className="mt-4 text-sm text-destructive font-medium bg-destructive/10 px-3 py-2 rounded-md text-center">
             {error}
           </p>
         )}
 
-        <div className="flex justify-end pt-2">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+          {["Feed", "Reels", "Stories", "Carousel"].map((fmt) => (
+            <button
+              key={fmt}
+              type="button"
+              disabled={useText && fmt === "Reels"}
+              onClick={() => {
+                setFormat(fmt as Format);
+                if (fmt === "Reels") setMediaType("video");
+                else if (fmt === "Feed") setMediaType("image");
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${format === fmt
+                ? "border-primary/50 bg-primary/10 text-primary"
+                : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
+                } ${useText && fmt === "Reels" ? "opacity-50 cursor-not-allowed hover:bg-card" : ""}`}
+            >
+              {fmt === "Feed" && <PenSquare className="h-3.5 w-3.5" />}
+              {fmt === "Reels" && <Video className="h-3.5 w-3.5" />}
+              {fmt === "Stories" && <Image className="h-3.5 w-3.5" />}
+              {fmt === "Carousel" && <Layers className="h-3.5 w-3.5" />}
+              {fmt}
+            </button>
+          ))}
+
+          <div className="h-4 w-px bg-border mx-1" />
+
           <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-md bg-foreground px-6 py-2.5 text-sm font-medium text-background transition-all hover:scale-[1.02] hover:opacity-90 disabled:opacity-50 disabled:hover:scale-100"
-            disabled={!prompt.trim()}
+            type="button"
+            onClick={() => {
+              const newUseText = !useText;
+              setUseText(newUseText);
+              if (newUseText && format === "Reels") {
+                setFormat("Feed");
+                setMediaType("image");
+              }
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${useText
+              ? "border-primary/50 bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
+              }`}
           >
-            <Sparkles className="h-4 w-4" />
-            Gerar Conteúdo Mágico
+            <Type className="h-4 w-4" />
+            Textos
           </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMediaKitDropdown(!showMediaKitDropdown);
+                setShowColorsSubmenu(false);
+                setShowLogosSubmenu(false);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${selectedFolderId || selectedLogoId
+                ? "border-primary/50 bg-primary/10 text-primary"
+                : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
+                }`}
+            >
+              <Palette className="h-4 w-4" />
+              Mídia Kit
+            </button>
+
+            {showMediaKitDropdown && (
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-56 rounded-lg border border-border/40 bg-card/95 backdrop-blur-md p-1.5 shadow-md animate-in fade-in slide-in-from-top-2 z-10">
+                {!showColorsSubmenu && !showLogosSubmenu ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowColorsSubmenu(true)}
+                      className="group flex w-full items-center justify-between rounded-sm px-3 py-2.5 text-sm text-foreground hover:bg-accent/50 transition-colors"
+                    >
+                      <span className="font-medium">Cores</span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowLogosSubmenu(true)}
+                      className="group flex w-full items-center justify-between rounded-sm px-3 py-2.5 text-sm text-foreground hover:bg-accent/50 transition-colors mt-1"
+                    >
+                      <span className="font-medium">Logos</span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </button>
+                    {typography ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUseTypography(!useTypography);
+                        }}
+                        className="group flex w-full items-center justify-between rounded-sm px-3 py-2 text-sm text-foreground hover:bg-accent/50 transition-colors mt-1"
+                      >
+                        <div className="flex flex-col items-start gap-0.5">
+                          <span className="font-medium">Tipografia</span>
+                          <span className="text-[11px] text-muted-foreground">{typography.primary_font}</span>
+                        </div>
+                        {useTypography ? (
+                          <Check className="h-4 w-4 text-primary shrink-0" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-sm border border-border shrink-0" />
+                        )}
+                      </button>
+                    ) : (
+                      <div className="flex w-full flex-col items-start rounded-sm px-3 py-2 mt-1 opacity-60">
+                        <span className="text-sm font-medium text-foreground">Tipografia</span>
+                        <span className="text-[11px] text-muted-foreground">Não configurada</span>
+                      </div>
+                    )}
+                  </>
+                ) : showColorsSubmenu ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowColorsSubmenu(false)}
+                      className="group flex w-full items-center gap-2 rounded-sm px-2 py-2 mb-1 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      <span className="">Voltar</span>
+                    </button>
+                    <div className="h-px w-full bg-border mb-1" />
+                    {brandColors.filter((c: any) => c.type === "folder").length > 0 ? (
+                      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                        {brandColors
+                          .filter((c: any) => c.type === "folder")
+                          .map((folder: any) => (
+                            <button
+                              key={folder.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedFolderId(
+                                  selectedFolderId === folder.id ? null : folder.id,
+                                );
+                                setShowMediaKitDropdown(false);
+                              }}
+                              className={`group flex w-full items-center justify-between rounded-sm px-2 py-2 text-sm text-foreground transition-colors ${selectedFolderId === folder.id ? "bg-accent" : "hover:bg-accent/50"
+                                }`}
+                            >
+                              <span className="text-xs truncate max-w-[100px] text-left">
+                                {folder.name}
+                              </span>
+                              <div className="flex pl-1">
+                                {folder.colors.slice(0, 4).map((hex: string, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    className="h-3 w-3 rounded-[2px] border border-black"
+                                    style={{
+                                      backgroundColor: hex,
+                                      marginLeft: idx > 0 ? "-0.4rem" : "0",
+                                      zIndex: 10 - idx,
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                              {selectedFolderId === folder.id && (
+                                <Check className="h-3 w-3 text-primary ml-1 shrink-0" />
+                              )}
+                            </button>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="p-2 text-center text-xs text-muted-foreground">
+                        Nenhuma pasta cadastrada.
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowLogosSubmenu(false)}
+                      className="group flex w-full items-center gap-2 rounded-sm px-2 py-2 mb-1 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      <span className="">Voltar</span>
+                    </button>
+                    <div className="h-px w-full bg-border mb-1" />
+                    {logos && logos.length > 0 ? (
+                      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                        {logos.map((logo: any) => (
+                          <button
+                            key={logo.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedLogoId(selectedLogoId === logo.id ? null : logo.id);
+                              setShowMediaKitDropdown(false);
+                            }}
+                            className={`group flex w-full items-center justify-between rounded-sm px-2 py-2 text-sm text-foreground transition-colors ${selectedLogoId === logo.id ? "bg-accent" : "hover:bg-accent/50"
+                              }`}
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <img src={logo.url} alt={logo.name} className="h-4 w-4 object-contain shrink-0" />
+                              <span className="text-xs truncate max-w-[100px] text-left">
+                                {logo.name}
+                              </span>
+                            </div>
+                            {selectedLogoId === logo.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-2 text-center text-xs text-muted-foreground">
+                        Nenhuma logo cadastrada.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
+
+        {format === "Carousel" && (
+          <div className="mt-6 flex flex-col items-center justify-center animate-in fade-in slide-in-from-bottom-2">
+            <label className="text-xs font-medium text-muted-foreground mb-2">
+              Quantidade de Slides ({slideCount})
+            </label>
+            <input
+              type="range"
+              min="2"
+              max="10"
+              value={slideCount}
+              onChange={(e) => setSlideCount(parseInt(e.target.value))}
+              className="w-48 accent-foreground"
+            />
+          </div>
+        )}
       </form>
-    </SectionShell>
+    </div>
   );
 }
 
@@ -852,9 +1180,9 @@ function ReviewCard({ post, onPreview }: { post: GeneratedPost; onPreview: () =>
   return (
     <article
       onClick={onPreview}
-      className="overflow-hidden rounded-md border border-border bg-card cursor-pointer hover:border-foreground/50 transition-colors"
+      className="group overflow-hidden rounded-xl border border-border/60 bg-card/50 shadow-sm cursor-pointer hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 ease-out"
     >
-      <div className="flex flex-col gap-4 p-4 sm:flex-row">
+      <div className="flex flex-col gap-4 p-5 sm:flex-row">
         {post.carrossel_items && post.carrossel_items.length > 0 ? (
           <div className="relative h-40 w-full shrink-0 sm:h-32 sm:w-32">
             <img
@@ -887,7 +1215,7 @@ function ReviewCard({ post, onPreview }: { post: GeneratedPost; onPreview: () =>
               {post.status}
             </span>
           </div>
-          <p className="text-sm leading-relaxed text-foreground line-clamp-3">
+          <p className="text-sm leading-relaxed text-foreground/80 line-clamp-3">
             {(post.caption || post.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}
           </p>
         </div>
@@ -896,7 +1224,15 @@ function ReviewCard({ post, onPreview }: { post: GeneratedPost; onPreview: () =>
   );
 }
 
-function ScheduledList({ posts, isLoading, onPreview }: { posts: GeneratedPost[], isLoading: boolean, onPreview: (p: GeneratedPost) => void }) {
+function ScheduledList({
+  posts,
+  isLoading,
+  onPreview,
+}: {
+  posts: GeneratedPost[];
+  isLoading: boolean;
+  onPreview: (p: GeneratedPost) => void;
+}) {
   if (isLoading) {
     return (
       <SectionShell>
@@ -919,9 +1255,13 @@ function ScheduledList({ posts, isLoading, onPreview }: { posts: GeneratedPost[]
   }
   return (
     <SectionShell>
-      <ul className="divide-y divide-border rounded-md border border-border bg-card">
+      <ul className="divide-y divide-border/40 rounded-xl border border-border/60 bg-card/50 shadow-sm overflow-hidden">
         {posts.map((p) => (
-          <li key={p.id} onClick={() => onPreview(p)} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-accent/50 transition-colors">
+          <li
+            key={p.id}
+            onClick={() => onPreview(p)}
+            className="group flex items-center gap-4 p-4 cursor-pointer hover:bg-accent/40 transition-all duration-300 ease-out"
+          >
             {p.carrossel_items && p.carrossel_items.length > 0 ? (
               <div className="relative h-12 w-12 shrink-0">
                 <img
@@ -945,7 +1285,9 @@ function ScheduledList({ posts, isLoading, onPreview }: { posts: GeneratedPost[]
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{(p.caption || p.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}</p>
+              <p className="truncate text-sm">
+                {(p.caption || p.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}
+              </p>
               <p className="text-xs text-muted-foreground uppercase">
                 {p.format} · {new Date(p.created_at || Date.now()).toLocaleString("pt-BR")}
               </p>
@@ -958,7 +1300,15 @@ function ScheduledList({ posts, isLoading, onPreview }: { posts: GeneratedPost[]
   );
 }
 
-function HistoryList({ posts, isLoading, onPreview }: { posts: GeneratedPost[], isLoading: boolean, onPreview: (p: GeneratedPost) => void }) {
+function HistoryList({
+  posts,
+  isLoading,
+  onPreview,
+}: {
+  posts: GeneratedPost[];
+  isLoading: boolean;
+  onPreview: (p: GeneratedPost) => void;
+}) {
   if (isLoading) {
     return (
       <SectionShell>
@@ -981,9 +1331,13 @@ function HistoryList({ posts, isLoading, onPreview }: { posts: GeneratedPost[], 
   }
   return (
     <SectionShell>
-      <ul className="divide-y divide-border rounded-md border border-border bg-card">
+      <ul className="divide-y divide-border/40 rounded-xl border border-border/60 bg-card/50 shadow-sm overflow-hidden">
         {posts.map((p) => (
-          <li key={p.id} onClick={() => onPreview(p)} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-accent/50 transition-colors">
+          <li
+            key={p.id}
+            onClick={() => onPreview(p)}
+            className="group flex items-center gap-4 p-4 cursor-pointer hover:bg-accent/40 transition-all duration-300 ease-out"
+          >
             {p.carrossel_items && p.carrossel_items.length > 0 ? (
               <div className="relative h-12 w-12 shrink-0">
                 <img
@@ -1007,15 +1361,16 @@ function HistoryList({ posts, isLoading, onPreview }: { posts: GeneratedPost[], 
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{(p.caption || p.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}</p>
+              <p className="truncate text-sm">
+                {(p.caption || p.prompt || "").replace(/\\n/g, " ").replace(/\n/g, " ")}
+              </p>
               <p className="text-xs text-muted-foreground uppercase">
                 {p.format} · {new Date(p.created_at || Date.now()).toLocaleDateString("pt-BR")}
               </p>
             </div>
             <span
-              className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] uppercase ${
-                p.status === "publicado" ? "bg-accent text-muted-foreground" : "text-destructive"
-              }`}
+              className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] uppercase ${p.status === "publicado" ? "bg-accent text-muted-foreground" : "text-destructive"
+                }`}
             >
               {p.status}
             </span>
@@ -1059,16 +1414,22 @@ function PostDetailsModal({
 
   if (!post) return null;
 
-  const formattedPrompt = post.prompt?.replace(/\\n/g, '\n') || "";
-  const formattedCaption = post.caption?.replace(/\\n/g, '\n') || "A IA ainda não gerou a legenda para este post.";
+  const formattedPrompt = post.prompt?.replace(/\\n/g, "\n") || "";
+  const formattedCaption =
+    post.caption?.replace(/\\n/g, "\n") || "A IA ainda não gerou a legenda para este post.";
 
   const handleApprove = async () => {
     if (!post) return;
     setIsSubmitting(true);
     try {
-      const { data, error } = await supabase.from("generated_posts").update({ status: "Aprovada" }).eq("id", post.id).select();
+      const { data, error } = await supabase
+        .from("generated_posts")
+        .update({ status: "Aprovada" })
+        .eq("id", post.id)
+        .select();
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error("Aprovação bloqueada por RLS ou post não encontrado.");
+      if (!data || data.length === 0)
+        throw new Error("Aprovação bloqueada por RLS ou post não encontrado.");
       onLocalUpdate({ ...post, status: "Aprovada" });
       onUpdate();
     } catch (err) {
@@ -1084,9 +1445,14 @@ function PostDetailsModal({
     if (!window.confirm("Tem certeza que deseja recusar e deletar este post permanente?")) return;
     setIsSubmitting(true);
     try {
-      const { data, error } = await supabase.from("generated_posts").delete().eq("id", post.id).select();
+      const { data, error } = await supabase
+        .from("generated_posts")
+        .delete()
+        .eq("id", post.id)
+        .select();
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error("Exclusão bloqueada por RLS ou post não encontrado.");
+      if (!data || data.length === 0)
+        throw new Error("Exclusão bloqueada por RLS ou post não encontrado.");
       onClose();
       onUpdate();
     } catch (err) {
@@ -1101,10 +1467,15 @@ function PostDetailsModal({
     if (!post) return;
     setIsSubmitting(true);
     try {
-      const { data, error } = await supabase.from("generated_posts").update({ status: "Publicar Agora" }).eq("id", post.id).select();
+      const { data, error } = await supabase
+        .from("generated_posts")
+        .update({ status: "Publicar Agora" })
+        .eq("id", post.id)
+        .select();
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error("Publicação bloqueada por RLS ou post não encontrado.");
-      
+      if (!data || data.length === 0)
+        throw new Error("Publicação bloqueada por RLS ou post não encontrado.");
+
       onLocalUpdate({ ...post, status: "Publicar Agora" });
       onUpdate();
       onClose();
@@ -1120,16 +1491,25 @@ function PostDetailsModal({
     if (!post || !scheduleDate) return;
     setIsSubmitting(true);
     try {
-      const { data: data1, error: error1 } = await supabase.from("post_agendamentos").insert({
-        post_id: post.id,
-        data_publicacao: new Date(scheduleDate).toISOString(),
-      }).select();
+      const { data: data1, error: error1 } = await supabase
+        .from("post_agendamentos")
+        .insert({
+          post_id: post.id,
+          data_publicacao: new Date(scheduleDate).toISOString(),
+        })
+        .select();
       if (error1) throw error1;
-      if (!data1 || data1.length === 0) throw new Error("Insert em post_agendamentos bloqueado por RLS.");
+      if (!data1 || data1.length === 0)
+        throw new Error("Insert em post_agendamentos bloqueado por RLS.");
 
-      const { data: data2, error: error2 } = await supabase.from("generated_posts").update({ agendada: true, status: "Aprovada" }).eq("id", post.id).select();
+      const { data: data2, error: error2 } = await supabase
+        .from("generated_posts")
+        .update({ agendada: true, status: "Aprovada" })
+        .eq("id", post.id)
+        .select();
       if (error2) throw error2;
-      if (!data2 || data2.length === 0) throw new Error("Update em generated_posts bloqueado por RLS.");
+      if (!data2 || data2.length === 0)
+        throw new Error("Update em generated_posts bloqueado por RLS.");
 
       onLocalUpdate({ ...post, agendada: true, status: "Aprovada" });
       onUpdate();
@@ -1148,37 +1528,39 @@ function PostDetailsModal({
         <DialogHeader className="shrink-0 pb-2 border-b border-border/50">
           <DialogTitle className="text-xl font-bold">Detalhes da Publicação</DialogTitle>
         </DialogHeader>
-        
+
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6 mt-4 overflow-y-auto lg:overflow-hidden">
           {/* Coluna da Esquerda: Mídia (foco total na imagem/vídeo) */}
           <div className="w-full lg:w-3/5 xl:w-2/3 flex flex-col gap-4 lg:h-full lg:min-h-0 items-center justify-center">
             <div className="flex-1 w-full min-h-0 flex items-center justify-center relative bg-black/5 rounded-xl border border-border/40 p-2 lg:p-4">
-              {post.format?.toUpperCase() === "CAROUSEL" && post.carrossel_items && post.carrossel_items.length > 0 ? (
+              {post.format?.toUpperCase() === "CAROUSEL" &&
+                post.carrossel_items &&
+                post.carrossel_items.length > 0 ? (
                 (() => {
                   const sortedItems = [...post.carrossel_items].sort((a, b) => a.ordem - b.ordem);
                   return (
                     <div className="w-full h-full relative flex items-center justify-center">
-                      <img 
-                        src={sortedItems[currentSlide].url} 
-                        alt={`Slide ${sortedItems[currentSlide].ordem}`} 
-                        className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
+                      <img
+                        src={sortedItems[currentSlide].url}
+                        alt={`Slide ${sortedItems[currentSlide].ordem}`}
+                        className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm"
                       />
                       <div className="absolute top-2 right-2 md:top-4 md:right-4 bg-black/60 text-white text-xs font-medium px-2.5 py-1 rounded-full backdrop-blur-md shadow-sm border border-white/10 z-10">
                         {currentSlide + 1} / {sortedItems.length}
                       </div>
-                      
+
                       {currentSlide > 0 && (
-                        <button 
-                          onClick={() => setCurrentSlide(c => c - 1)}
+                        <button
+                          onClick={() => setCurrentSlide((c) => c - 1)}
                           className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 text-white hover:bg-black/70 transition-colors backdrop-blur-md shadow-lg"
                         >
                           <ChevronLeft className="h-6 w-6" />
                         </button>
                       )}
-                      
+
                       {currentSlide < sortedItems.length - 1 && (
-                        <button 
-                          onClick={() => setCurrentSlide(c => c + 1)}
+                        <button
+                          onClick={() => setCurrentSlide((c) => c + 1)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 text-white hover:bg-black/70 transition-colors backdrop-blur-md shadow-lg"
                         >
                           <ChevronRight className="h-6 w-6" />
@@ -1186,38 +1568,38 @@ function PostDetailsModal({
                       )}
 
                       <div className="absolute bottom-2 md:bottom-4 left-0 right-0 flex justify-center gap-2 z-10">
-                         {sortedItems.map((_, idx) => (
-                           <div 
-                             key={idx} 
-                             className={`w-2 h-2 rounded-full backdrop-blur-sm transition-colors shadow-sm ${idx === currentSlide ? 'bg-white' : 'bg-white/40'}`} 
-                           />
-                         ))}
+                        {sortedItems.map((_, idx) => (
+                          <div
+                            key={idx}
+                            className={`w-2 h-2 rounded-full backdrop-blur-sm transition-colors shadow-sm ${idx === currentSlide ? "bg-white" : "bg-white/40"}`}
+                          />
+                        ))}
                       </div>
                     </div>
                   );
                 })()
               ) : post.generated_media ? (
                 isVideoUrl(post.generated_media) ? (
-                  <video 
-                    src={post.generated_media} 
-                    controls 
-                    autoPlay 
-                    loop 
-                    muted 
-                    className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
+                  <video
+                    src={post.generated_media}
+                    controls
+                    autoPlay
+                    loop
+                    muted
+                    className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm"
                   />
                 ) : (
-                  <img 
-                    src={post.generated_media} 
-                    alt="Mídia gerada" 
-                    className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
+                  <img
+                    src={post.generated_media}
+                    alt="Mídia gerada"
+                    className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm"
                   />
                 )
               ) : post.image_url ? (
-                <img 
-                  src={post.image_url} 
-                  alt="Imagem do post" 
-                  className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm" 
+                <img
+                  src={post.image_url}
+                  alt="Imagem do post"
+                  className="max-w-full max-h-full object-contain rounded-lg drop-shadow-sm"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground bg-secondary/20 rounded-lg">
@@ -1225,12 +1607,25 @@ function PostDetailsModal({
                 </div>
               )}
             </div>
-            
+
             <div className="w-full text-xs text-muted-foreground space-y-2 bg-secondary/30 p-4 rounded-xl border border-border/50 shrink-0 text-left">
-              <p><strong>ID:</strong> {post.id}</p>
-              <p><strong>Formato:</strong> <span className="uppercase font-semibold text-foreground/90">{post.format}</span></p>
-              <p><strong>Status:</strong> <span className="uppercase font-semibold text-foreground/90">{post.status} {post.agendada && "(Agendada)"}</span></p>
-              <p><strong>Criado em:</strong> {new Date(post.created_at || Date.now()).toLocaleString("pt-BR")}</p>
+              <p>
+                <strong>ID:</strong> {post.id}
+              </p>
+              <p>
+                <strong>Formato:</strong>{" "}
+                <span className="uppercase font-semibold text-foreground/90">{post.format}</span>
+              </p>
+              <p>
+                <strong>Status:</strong>{" "}
+                <span className="uppercase font-semibold text-foreground/90">
+                  {post.status} {post.agendada && "(Agendada)"}
+                </span>
+              </p>
+              <p>
+                <strong>Criado em:</strong>{" "}
+                {new Date(post.created_at || Date.now()).toLocaleString("pt-BR")}
+              </p>
             </div>
           </div>
 
@@ -1250,10 +1645,10 @@ function PostDetailsModal({
                 <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground/95">
                   <Edit3 className="h-4 w-4 text-indigo-500" /> Legenda
                 </h3>
-                <Textarea 
+                <Textarea
                   readOnly
-                  value={formattedCaption} 
-                  className="flex-1 min-h-[180px] lg:min-h-[280px] resize-none text-sm leading-relaxed p-4 bg-secondary/10 border border-border/40 focus:ring-0 focus-visible:ring-0" 
+                  value={formattedCaption}
+                  className="flex-1 min-h-[180px] lg:min-h-[280px] resize-none text-sm leading-relaxed p-4 bg-secondary/10 border border-border/40 focus:ring-0 focus-visible:ring-0"
                 />
               </div>
             </div>
@@ -1300,8 +1695,8 @@ function PostDetailsModal({
               {showDatePicker && (
                 <div className="space-y-4 mb-2 bg-secondary/20 p-4 rounded-xl border border-border/50">
                   <h4 className="text-sm font-medium">Selecione a data e hora de postagem:</h4>
-                  <input 
-                    type="datetime-local" 
+                  <input
+                    type="datetime-local"
                     value={scheduleDate}
                     onChange={(e) => setScheduleDate(e.target.value)}
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
