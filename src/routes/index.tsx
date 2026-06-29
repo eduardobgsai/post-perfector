@@ -24,8 +24,16 @@ import {
   Image,
   Layers,
   Type,
+  ShoppingBag,
+  ChevronDown,
+  Monitor,
+  Volume2,
+  VolumeX,
+  AlertCircle,
+  Paperclip,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { MediaKit } from "@/components/MediaKit";
 import { Card, CardContent } from "@/components/ui/card";
@@ -359,7 +367,7 @@ const isVideoUrl = (url: string): boolean => {
 };
 
 const generateMediaAPI = async (
-  imageFile: File | null,
+  imageFiles: File[],
   prompt: string,
   format: string,
   mediaType: "image" | "video",
@@ -368,9 +376,13 @@ const generateMediaAPI = async (
   brandColors?: any[],
   typography?: any,
   logoUrl?: string,
-  useText?: boolean
+  useText?: boolean,
+  tryon?: boolean,
+  videoResolution?: string,
+  generateAudio?: boolean,
+  videoDuration?: string
 ): Promise<{ videoUrl: string; generatedCaption: string }> => {
-  let imageUrl = "";
+  let imageUrls: string[] = [];
 
   // 1. Gerar UUID único para o post
   const postId =
@@ -382,25 +394,28 @@ const generateMediaAPI = async (
         return v.toString(16);
       });
 
-  // 2. Upload da imagem para o Supabase Storage se houver
-  if (imageFile) {
-    const fileExt = imageFile.name.split(".").pop() || "jpg";
-    const filePath = `entradas/${postId}.${fileExt}`;
+  // 2. Upload das imagens para o Supabase Storage
+  if (imageFiles && imageFiles.length > 0) {
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      const fileExt = file.name.split(".").pop() || "jpg";
+      const filePath = `entradas/${postId}_${i}.${fileExt}`;
 
-    const { error } = await supabase.storage.from("midias_posts").upload(filePath, imageFile, {
-      upsert: true,
-    });
+      const { error } = await supabase.storage.from("midias_posts").upload(filePath, file, {
+        upsert: true,
+      });
 
-    if (error) {
-      console.error("Erro ao fazer upload da imagem:", error);
-      throw new Error("Erro ao fazer upload da imagem para o Supabase Storage: " + error.message);
+      if (error) {
+        console.error("Erro ao fazer upload da imagem:", error);
+        throw new Error("Erro ao fazer upload da imagem para o Supabase Storage: " + error.message);
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("midias_posts").getPublicUrl(filePath);
+
+      imageUrls.push(publicUrl);
     }
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("midias_posts").getPublicUrl(filePath);
-
-    imageUrl = publicUrl;
   }
 
   // 3. Enviar o ID e os dados para o webhook do n8n
@@ -425,12 +440,10 @@ const generateMediaAPI = async (
       user_id: userId,
       format: apiFormat,
       prompt,
-      image: imageUrl || null,
+      images: imageUrls,
       timestamp: new Date().toISOString(),
       media_type: resolvedMediaType,
-      aspect_ratio: useText 
-        ? (format === "Feed" || format === "Carousel" ? "portrait_4_3" : "portrait_16_9")
-        : (format === "Feed" || format === "Carousel" ? "1:1" : "9:16"),
+      aspect_ratio: format === "Feed" || format === "Carousel" ? "1:1" : "9:16",
       ...(format === "Carousel" && slideCount ? { slide_count: slideCount } : {}),
       ...(brandColors && brandColors.length > 0 ? { brand_colors: brandColors } : {}),
       ...(typography ? {
@@ -444,6 +457,12 @@ const generateMediaAPI = async (
       }),
       ...(logoUrl ? { logo_url: logoUrl } : {}),
       Text: useText !== undefined ? useText : true,
+      tryon: tryon !== undefined ? tryon : false,
+      ...(resolvedMediaType === "video" ? {
+        resolution: videoResolution || "1080p",
+        generate_audio: generateAudio !== undefined ? generateAudio : false,
+        duration: videoDuration || "4s",
+      } : {}),
     }),
   });
 
@@ -524,8 +543,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [slideCount, setSlideCount] = useState<number>(3);
   const [prompt, setPrompt] = useState("");
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -541,7 +559,129 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   const [showLogosSubmenu, setShowLogosSubmenu] = useState(false);
   const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null);
   const [useText, setUseText] = useState(true);
+  const [isProductPhoto, setIsProductPhoto] = useState(false);
+  const [showFormatDropdown, setShowFormatDropdown] = useState(false);
+  const [videoResolution, setVideoResolution] = useState<"720p" | "1080p" | "4k">("1080p");
+  const [generateAudio, setGenerateAudio] = useState(false);
+  const [videoDuration, setVideoDuration] = useState<"4s" | "6s" | "8s">("4s");
+  const [showResolutionDropdown, setShowResolutionDropdown] = useState(false);
+  const [showDurationDropdown, setShowDurationDropdown] = useState(false);
+  const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
   const { user } = useAuth();
+
+  useEffect(() => {
+    let dragCounter = 0;
+
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer?.types.includes("Files")) {
+        dragCounter++;
+        setIsDraggingGlobal(true);
+      }
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer?.types.includes("Files")) {
+        dragCounter--;
+        if (dragCounter === 0) {
+          setIsDraggingGlobal(false);
+        }
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounter = 0;
+      setIsDraggingGlobal(false);
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener("dragenter", handleDragEnter);
+    window.addEventListener("dragleave", handleDragLeave);
+    window.addEventListener("drop", handleDrop);
+    window.addEventListener("dragover", handleDragOver);
+
+    return () => {
+      window.removeEventListener("dragenter", handleDragEnter);
+      window.removeEventListener("dragleave", handleDragLeave);
+      window.removeEventListener("drop", handleDrop);
+      window.removeEventListener("dragover", handleDragOver);
+    };
+  }, []);
+
+  const handleFiles = (incomingFiles: FileList | File[]) => {
+    const fileArray = Array.from(incomingFiles);
+    if (fileArray.length === 0) return;
+
+    setFiles(prevFiles => {
+      const newFiles = [...prevFiles, ...fileArray];
+      const totalFiles = newFiles.length;
+
+      if (totalFiles > 1) {
+        setIsProductPhoto(true);
+        const isVideoMode = format === "Reels" || (format === "Stories" && mediaType === "video");
+        if (isVideoMode) {
+          setFormat("Feed");
+          setMediaType("image");
+          toast("Múltiplos arquivos detectados. Os modos de vídeo foram desativados e 'Fotos de Produto' ativado.", { duration: 4000 });
+        } else if (prevFiles.length <= 1) {
+          toast("Múltiplos arquivos detectados. O modo 'Fotos de Produto' foi ativado.", { duration: 4000 });
+        }
+      }
+
+      return newFiles;
+    });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      handleFiles(e.target.files);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    setIsDraggingGlobal(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+  };
+
+  const handleModeSelection = (newFormat: Format, newMediaType: "image" | "video") => {
+    const isNewVideoMode = newFormat === "Reels" || (newFormat === "Stories" && newMediaType === "video");
+
+    if (isNewVideoMode && files.length > 1) {
+      toast("Para criar vídeos, remova as imagens adicionais (suporta apenas 1 arquivo).", { duration: 4000 });
+      return;
+    }
+
+    setFormat(newFormat);
+    setMediaType(newMediaType);
+
+    if (newFormat === "Reels") {
+      setUseText(false);
+    }
+
+    setShowFormatDropdown(false);
+  };
 
   const fetchBrandColors = async () => {
     if (!user) return;
@@ -627,7 +767,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
       const selectedLogoUrl = selectedLogoId ? logos.find((l) => l.id === selectedLogoId)?.url : undefined;
 
       generateMediaAPI(
-        file,
+        files,
         prompt,
         format,
         mediaType,
@@ -638,7 +778,11 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
           : undefined,
         useTypography ? typography : undefined,
         selectedLogoUrl,
-        useText
+        useText,
+        isProductPhoto,
+        videoResolution,
+        generateAudio,
+        videoDuration
       )
         .then((result) => {
           clearInterval(interval);
@@ -659,7 +803,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
 
       return () => clearInterval(interval);
     }
-  }, [step, file, prompt, format, mediaType, slideCount]);
+  }, [step, files, prompt, format, mediaType, slideCount]);
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -677,8 +821,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
   const resetForm = () => {
     setStep("idle");
     setPrompt("");
-    setFile(null);
-    setFileName(null);
+    setFiles([]);
     setVideoUrl("");
     setCaption("");
     setError(null);
@@ -847,7 +990,73 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
         }}
         className="w-full relative"
       >
-        <div className="bg-card rounded-2xl border border-border shadow-sm p-3 relative flex flex-col focus-within:border-foreground/30 focus-within:shadow-md transition-all duration-300">
+        <div
+          className={`bg-card rounded-2xl border shadow-sm p-3 relative flex flex-col focus-within:border-foreground/30 focus-within:shadow-md transition-all duration-300 ${dragging ? "border-primary bg-primary/10 shadow-[0_0_30px_rgba(var(--primary),0.2)] scale-[1.01]" : "border-border"
+            }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          {isDraggingGlobal && (
+            <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center rounded-2xl bg-card/80 backdrop-blur-sm border-2 border-dashed transition-colors duration-200 pointer-events-none ${dragging ? "border-primary text-primary" : "border-primary/50 text-muted-foreground"
+              }`}>
+              <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-background/80 shadow-sm">
+                <Paperclip className="h-6 w-6 mb-1.5" />
+                <p className="text-sm">{dragging ? "Solte para anexar" : "Arraste os arquivos para cá"}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="mb-2 relative self-start z-50">
+            <button
+              type="button"
+              onClick={() => setShowFormatDropdown(!showFormatDropdown)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-accent/50 text-foreground transition-colors group"
+            >
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span className="font-semibold">{format}</span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+            </button>
+
+            {showFormatDropdown && (
+              <div className="absolute top-full mt-1 left-0 w-48 rounded-xl border border-border/40 bg-card/95 backdrop-blur-md p-1.5 shadow-lg animate-in fade-in slide-in-from-top-2">
+                {["Feed", "Reels", "Stories", "Carousel"].map((fmt) => {
+                  const isDisabled = fmt === "Reels" && files.length > 1;
+                  return (
+                    <div key={fmt} className="relative group">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isDisabled) return;
+                          let newMedia: "image" | "video" = mediaType;
+                          if (fmt === "Reels") newMedia = "video";
+                          else if (fmt === "Feed") newMedia = "image";
+                          handleModeSelection(fmt as Format, newMedia);
+                        }}
+                        className={`flex items-center w-full px-2 py-2 rounded-lg text-sm transition-colors ${format === fmt ? "bg-accent text-foreground font-medium" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                          } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <div className="flex items-center w-full gap-2">
+                          {fmt === "Feed" && <PenSquare className="h-4 w-4 shrink-0" />}
+                          {fmt === "Reels" && <Video className="h-4 w-4 shrink-0" />}
+                          {fmt === "Stories" && <Image className="h-4 w-4 shrink-0" />}
+                          {fmt === "Carousel" && <Layers className="h-4 w-4 shrink-0" />}
+                          <span>{fmt}</span>
+                          {format === fmt && !isDisabled && <Check className="h-4 w-4 ml-auto" />}
+                        </div>
+                      </button>
+                      {isDisabled && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 hidden group-hover:flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-lg border border-border/40 bg-card/95 backdrop-blur-md shadow-lg text-xs text-amber-500 font-medium animate-in fade-in slide-in-from-left-1 z-50 pointer-events-none">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          <span>Remova fotos extras para ativar</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -861,32 +1070,44 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
               <input
                 ref={inputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*"
+                multiple={!(format === "Reels" || (format === "Stories" && mediaType === "video"))}
                 className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) {
-                    setFileName(f.name);
-                    setFile(f);
-                  } else {
-                    setFileName(null);
-                    setFile(null);
-                  }
-                }}
+                onChange={handleFileUpload}
               />
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className={`flex items-center justify-center h-10 w-10 rounded-full transition-colors ${file ? "bg-primary/10 text-primary" : "bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"}`}
-                title={fileName || "Anexar Imagem"}
+                className={`flex items-center justify-center h-10 w-10 rounded-full transition-colors ${files.length > 0 ? "bg-primary/10 text-primary" : "bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                title={
+                  (format === "Reels" || (format === "Stories" && mediaType === "video"))
+                    ? "Anexar mídia (Máx 1 arquivo para este modo)"
+                    : files.length > 0
+                      ? `${files.length} arquivos selecionados`
+                      : "Anexar Imagem"
+                }
               >
                 <Upload className="h-5 w-5" />
               </button>
 
-              {file && (
-                <span className="text-xs text-muted-foreground max-w-[120px] truncate">
-                  {fileName}
-                </span>
+              {files.length > 0 && (
+                <div className="flex items-center pl-3 group">
+                  {files.map((f, idx) => (
+                    <div
+                      key={`${f.name}-${idx}`}
+                      className="transition-all duration-300 ease-out group-hover:!ml-2 group-hover:scale-105"
+                      style={{
+                        marginLeft: idx > 0 ? "-1.5rem" : "0",
+                        zIndex: 10 - idx,
+                      }}
+                    >
+                      <ImagePreview
+                        file={f}
+                        onRemove={() => setFiles(prev => prev.filter((_, i) => i !== idx))}
+                      />
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -907,51 +1128,68 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
         )}
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          {["Feed", "Reels", "Stories", "Carousel"].map((fmt) => (
-            <button
-              key={fmt}
-              type="button"
-              disabled={useText && fmt === "Reels"}
-              onClick={() => {
-                setFormat(fmt as Format);
-                if (fmt === "Reels") setMediaType("video");
-                else if (fmt === "Feed") setMediaType("image");
-              }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${format === fmt
-                ? "border-primary/50 bg-primary/10 text-primary"
-                : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
-                } ${useText && fmt === "Reels" ? "opacity-50 cursor-not-allowed hover:bg-card" : ""}`}
-            >
-              {fmt === "Feed" && <PenSquare className="h-3.5 w-3.5" />}
-              {fmt === "Reels" && <Video className="h-3.5 w-3.5" />}
-              {fmt === "Stories" && <Image className="h-3.5 w-3.5" />}
-              {fmt === "Carousel" && <Layers className="h-3.5 w-3.5" />}
-              {fmt}
-            </button>
-          ))}
-
-          <div className="h-4 w-px bg-border mx-1" />
+          {format === "Stories" && (
+            <div className="flex bg-card border border-border p-1 rounded-full items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleModeSelection("Stories", "image")}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${mediaType === "image" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+              >
+                Imagem
+              </button>
+              <div className="relative group flex items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (files.length > 1) return;
+                    handleModeSelection("Stories", "video");
+                  }}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${mediaType === "video" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                    } ${files.length > 1 ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  Vídeo
+                </button>
+                {files.length > 1 && (
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-lg border border-border/40 bg-card/95 backdrop-blur-md shadow-lg text-xs text-amber-500 font-medium animate-in fade-in slide-in-from-bottom-1 z-50 pointer-events-none">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    <span>Remova fotos extras para usar vídeo</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <button
             type="button"
+            disabled={mediaType === "video"}
             onClick={() => {
-              const newUseText = !useText;
-              setUseText(newUseText);
-              if (newUseText && format === "Reels") {
-                setFormat("Feed");
-                setMediaType("image");
-              }
+              setUseText(!useText);
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${useText
-              ? "border-primary/50 bg-primary/10 text-primary"
-              : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${mediaType === "video"
+                ? "opacity-50 cursor-not-allowed border-border bg-card text-muted-foreground"
+                : useText
+                  ? "border-primary/50 bg-primary/10 text-primary"
+                  : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
               }`}
           >
             <Type className="h-4 w-4" />
             Textos
           </button>
 
-          <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsProductPhoto(!isProductPhoto)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${isProductPhoto
+              ? "border-primary/50 bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
+              }`}
+          >
+            <ShoppingBag className="h-4 w-4" />
+            Fotos de Produto
+          </button>
+
+          <div className={`relative ${showMediaKitDropdown ? "z-50" : "z-40"}`}>
             <button
               type="button"
               onClick={() => {
@@ -969,7 +1207,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
             </button>
 
             {showMediaKitDropdown && (
-              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-56 rounded-lg border border-border/40 bg-card/95 backdrop-blur-md p-1.5 shadow-md animate-in fade-in slide-in-from-top-2 z-10">
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-56 rounded-lg border border-border/40 bg-card/95 backdrop-blur-md p-1.5 shadow-md animate-in fade-in slide-in-from-top-2 z-30">
                 {!showColorsSubmenu && !showLogosSubmenu ? (
                   <>
                     <button
@@ -1115,6 +1353,80 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
             )}
           </div>
         </div>
+
+        {mediaType === "video" && (
+          <div className={`mt-4 flex flex-wrap items-center justify-center gap-2 animate-in fade-in slide-in-from-bottom-2 relative ${showResolutionDropdown || showDurationDropdown ? "z-50" : "z-30"}`}>
+            <span className="text-xs font-medium text-muted-foreground mr-2">Configurações de Vídeo:</span>
+
+            <div className="relative z-10">
+              <button
+                type="button"
+                onClick={() => setShowResolutionDropdown(!showResolutionDropdown)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20`}
+              >
+                <Monitor className="h-4 w-4" />
+                {videoResolution}
+              </button>
+              {showResolutionDropdown && (
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-32 rounded-lg border border-border/40 bg-card/95 backdrop-blur-md p-1.5 shadow-md animate-in fade-in slide-in-from-bottom-2">
+                  {["720p", "1080p", "4k"].map(res => (
+                    <button
+                      key={res}
+                      type="button"
+                      onClick={() => {
+                        setVideoResolution(res as "720p" | "1080p" | "4k");
+                        setShowResolutionDropdown(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 rounded-md text-sm hover:bg-accent/50"
+                    >
+                      {res}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setGenerateAudio(!generateAudio)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${generateAudio
+                ? "border-primary/50 bg-primary/10 text-primary"
+                : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
+                }`}
+            >
+              {generateAudio ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              Áudio
+            </button>
+
+            <div className="relative z-10">
+              <button
+                type="button"
+                onClick={() => setShowDurationDropdown(!showDurationDropdown)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20`}
+              >
+                <Clock className="h-4 w-4" />
+                {videoDuration}
+              </button>
+              {showDurationDropdown && (
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-24 rounded-lg border border-border/40 bg-card/95 backdrop-blur-md p-1.5 shadow-md animate-in fade-in slide-in-from-bottom-2">
+                  {["4s", "6s", "8s"].map(dur => (
+                    <button
+                      key={dur}
+                      type="button"
+                      onClick={() => {
+                        setVideoDuration(dur as "4s" | "6s" | "8s");
+                        setShowDurationDropdown(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 rounded-md text-sm hover:bg-accent/50"
+                    >
+                      {dur}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {format === "Carousel" && (
           <div className="mt-6 flex flex-col items-center justify-center animate-in fade-in slide-in-from-bottom-2">
@@ -1386,6 +1698,37 @@ function EmptyState({ title, description }: { title: string; description: string
     <div className="rounded-md border border-dashed border-border bg-card px-6 py-16 text-center">
       <p className="text-sm font-medium text-foreground">{title}</p>
       <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+function ImagePreview({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const [url, setUrl] = useState<string>("");
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  return (
+    <div className="relative group/img w-14 h-14 shrink-0">
+      <img
+        src={url}
+        alt="Preview"
+        className="h-full w-full rounded-md object-cover border-2 border-background shadow-sm"
+      />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onRemove();
+        }}
+        className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full h-5 w-5 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity shadow-sm hover:scale-110 z-10"
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   );
 }
