@@ -31,6 +31,9 @@ import {
   VolumeX,
   AlertCircle,
   Paperclip,
+  Settings,
+  ShieldCheck,
+  Coins,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -94,6 +97,8 @@ function App() {
   const [view, setView] = useState<View>("review");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [isFacebookConnected, setIsFacebookConnected] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [reviewPosts, setReviewPosts] = useState<GeneratedPost[]>([]);
@@ -135,8 +140,50 @@ function App() {
   useEffect(() => {
     if (user) {
       fetchPosts();
+      checkIntegration();
     }
   }, [view, user]);
+
+  const checkIntegration = async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('integracoes')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('plataforma', 'instagram')
+      .maybeSingle();
+
+    if (data && !error) {
+      setIsFacebookConnected(true);
+    }
+  };
+
+  const conectarInstagram = async () => {
+    // 1. Verificar se já existe uma identidade do Facebook vinculada ao usuário
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser?.identities) {
+      const fbIdentity = currentUser.identities.find((id) => id.provider === 'facebook');
+      if (fbIdentity) {
+        // 2. Se já existe, desvinculamos primeiro. 
+        // Isso resolve o problema de quem clicou antes da tela de callback estar pronta
+        // e agora está recebendo "identity_already_exists", sem ter o token salvo.
+        await supabase.auth.unlinkIdentity(fbIdentity);
+      }
+    }
+
+    // 3. Vincular novamente para obter um novo provider_token
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'facebook',
+      options: {
+        scopes: 'email, instagram_basic, instagram_content_publish, pages_show_list, pages_read_engagement',
+        redirectTo: `${window.location.origin}/callback`
+      }
+    });
+
+    if (error) {
+      toast.error("Erro ao vincular conta: " + error.message);
+    }
+  };
 
   const navItems: { id: View; label: string; icon: typeof Inbox; count?: number }[] = [
     { id: "new", label: "Novo Post", icon: PenSquare },
@@ -262,7 +309,49 @@ function App() {
           })}
         </nav>
 
-        <div className="absolute bottom-6 left-0 right-0 px-3">
+        <div className="absolute bottom-6 left-0 right-0 px-3 flex flex-col gap-1">
+          <div className="flex flex-col bg-background/50 rounded-md overflow-hidden border border-border/50">
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="group flex w-full items-center justify-between px-2 py-2 text-sm transition-colors duration-300 ease-out text-foreground/80 font-medium hover:bg-foreground/10 hover:text-foreground"
+            >
+              <div className="flex items-center gap-2">
+                <Settings className="h-4 w-4 shrink-0 transition-transform duration-300 ease-out group-hover:animate-icon-wobble stroke-[2.5]" />
+                <span className="truncate">Configurações</span>
+              </div>
+              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-300 ${showSettings ? "rotate-180" : ""}`} />
+            </button>
+
+            {showSettings && (
+              <div className="flex flex-col pb-2 px-2 gap-1">
+                <button
+                  onClick={conectarInstagram}
+                  className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
+                    <span className="truncate">Autenticação</span>
+                  </div>
+                  {isFacebookConnected && (
+                    <div className="flex items-center gap-1.5 text-green-500">
+                      <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
+                      <span className="font-medium text-[10px] uppercase tracking-wider">Ativa</span>
+                    </div>
+                  )}
+                </button>
+                <button
+                  className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Coins className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
+                    <span className="truncate">Créditos</span>
+                  </div>
+                  <span className="text-primary font-medium">R$ 0,00</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={signOut}
             className="group flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm transition-colors duration-300 ease-out text-foreground/80 font-medium hover:bg-destructive/20 hover:text-destructive"
@@ -1167,10 +1256,10 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
               setUseText(!useText);
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm border transition-colors ${mediaType === "video"
-                ? "opacity-50 cursor-not-allowed border-border bg-card text-muted-foreground"
-                : useText
-                  ? "border-primary/50 bg-primary/10 text-primary"
-                  : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
+              ? "opacity-50 cursor-not-allowed border-border bg-card text-muted-foreground"
+              : useText
+                ? "border-primary/50 bg-primary/10 text-primary"
+                : "border-border bg-card text-foreground hover:bg-accent hover:border-foreground/20"
               }`}
           >
             <Type className="h-4 w-4" />

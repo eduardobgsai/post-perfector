@@ -5,8 +5,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -20,12 +18,29 @@ export const Route = createFileRoute("/login")({
   component: LoginScreen,
 });
 
+const isStrongPassword = (password: string) => {
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumbers = /\d/.test(password);
+  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  const hasMinLength = password.length >= 8;
+
+  return hasUpperCase && hasLowerCase && hasNumbers && hasSpecialChar && hasMinLength;
+};
+
 function LoginScreen() {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  // Login States
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  
+  // Signup States
+  const [name, setName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -44,8 +59,8 @@ function LoginScreen() {
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: loginEmail,
+        password: loginPassword,
       });
 
       if (error) throw error;
@@ -62,10 +77,21 @@ function LoginScreen() {
     setError("");
     setMessage("");
 
+    if (!isStrongPassword(signupPassword)) {
+      setError("A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma minúscula, um número e um caractere especial.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+        email: signupEmail,
+        password: signupPassword,
+        options: {
+          data: {
+            full_name: name,
+          }
+        }
       });
 
       if (error) throw error;
@@ -75,7 +101,7 @@ function LoginScreen() {
         setMessage("Conta criada com sucesso!");
       } else {
         setMessage(
-          "Conta criada! Verifique seu email para confirmar (se necessário) ou faça login.",
+          "Conta criada com sucesso! Por favor, verifique sua caixa de entrada para confirmar o seu e-mail antes de fazer o login.",
         );
       }
     } catch (err: any) {
@@ -109,8 +135,8 @@ function LoginScreen() {
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger value="login">Entrar</TabsTrigger>
-              <TabsTrigger value="signup">Cadastrar</TabsTrigger>
+              <TabsTrigger value="login" onClick={() => { setError(""); setMessage(""); }}>Entrar</TabsTrigger>
+              <TabsTrigger value="signup" onClick={() => { setError(""); setMessage(""); }}>Cadastrar</TabsTrigger>
             </TabsList>
 
             <TabsContent value="login">
@@ -121,8 +147,8 @@ function LoginScreen() {
                     id="email"
                     type="email"
                     placeholder="seu@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
                     required
                   />
                 </div>
@@ -131,8 +157,8 @@ function LoginScreen() {
                   <Input
                     id="password"
                     type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
                     required
                   />
                 </div>
@@ -149,13 +175,24 @@ function LoginScreen() {
             <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4">
                 <div className="space-y-2">
+                  <Label htmlFor="signup-name">Nome</Label>
+                  <Input
+                    id="signup-name"
+                    type="text"
+                    placeholder="Seu nome completo"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
                   <Input
                     id="signup-email"
                     type="email"
                     placeholder="seu@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={signupEmail}
+                    onChange={(e) => setSignupEmail(e.target.value)}
                     required
                   />
                 </div>
@@ -164,11 +201,13 @@ function LoginScreen() {
                   <Input
                     id="signup-password"
                     type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
                     required
-                    minLength={6}
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    A senha deve ter no mínimo 8 caracteres, conter letra maiúscula, minúscula, número e caractere especial.
+                  </p>
                 </div>
 
                 {error && <p className="text-sm text-destructive font-medium">{error}</p>}
