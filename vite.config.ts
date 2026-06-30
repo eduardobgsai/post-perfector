@@ -5,7 +5,6 @@
 //   - error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
-import netlify from "@netlify/vite-plugin-tanstack-start";
 
 export default defineConfig({
   tanstackStart: {
@@ -14,8 +13,5 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
-    plugins: [
-      netlify(), // Aqui entra o plugin do Netlify
-    ],
   },
 });
