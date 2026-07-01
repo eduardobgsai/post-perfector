@@ -1,13 +1,16 @@
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { defineConfig } from 'vite'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import tsConfigPaths from 'vite-tsconfig-paths'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  tanstackStart: {
-    server: { entry: "server" },
-  },
-  // Adicionamos esta configuração para forçar a compilação para o Vercel
-  nitro: {
-    preset: "vercel"
-  },
-  vite: {
-  },
-});
+  plugins: [
+    tsConfigPaths(),
+    tailwindcss(),
+    tanstackStart({
+      server: {
+        preset: 'vercel',
+      },
+    }),
+  ],
+})
