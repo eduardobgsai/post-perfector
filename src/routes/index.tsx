@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { useState, useRef, type ReactNode, useEffect } from "react";
 import {
   PenSquare,
@@ -45,6 +46,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AnimatedIcon } from "@/components/AnimatedIcon";
+
+const getInstagramAuthUrl = createServerFn({ method: "GET" })
+  .validator((userId: string) => userId)
+  .handler(async ({ data: userId }) => {
+    const clientId = process.env.INSTAGRAM_APP_ID;
+    const redirectUri = `${process.env.VITE_APP_URL}/api/instagram/callback`;
+    const state = userId;
+    return `https://api.instagram.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments%2Cinstagram_business_content_publish&response_type=code&state=${state}`;
+  });
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -290,6 +300,24 @@ function App() {
                     <span className="truncate">Créditos</span>
                   </div>
                   <span className="text-primary font-medium">R$ 0,00</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    if (user) {
+                      try {
+                        const url = await getInstagramAuthUrl({ data: user.id });
+                        window.location.href = url;
+                      } catch (err) {
+                        toast.error("Erro ao gerar link de conexão do Instagram.");
+                      }
+                    }
+                  }}
+                  className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <AnimatedIcon name="instagram" className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">Conectar Instagram</span>
+                  </div>
                 </button>
               </div>
             )}
