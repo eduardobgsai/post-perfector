@@ -36,7 +36,7 @@ const InstagramIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const getInstagramAuthUrl = createServerFn({ method: "GET" })
+export const getInstagramAuthUrl = createServerFn({ method: "GET" })
   .validator((userId: string) => userId)
   .handler(async ({ data: userId }) => {
     const clientId = process.env.INSTAGRAM_APP_ID;
