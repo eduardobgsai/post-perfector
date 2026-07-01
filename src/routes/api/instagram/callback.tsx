@@ -45,16 +45,17 @@ const exchangeInstagramToken = createServerFn({ method: 'GET' })
     }
 
     // 3. Salva no Supabase
-    await supabase.from('integracoes').upsert({
+    const { error: upsertError } = await supabase.from('integracoes').upsert({
       user_id: data.state,
       plataforma: 'instagram',
       access_token: tokenData.access_token,
-      instagram_business_id: meData.id,
-      instagram_username: meData.username,
-      token_type: tokenData.token_type,
-      expires_in: tokenData.expires_in,
-      connected_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' })
+      instagram_business_id: meData.id
+    }, { onConflict: 'user_id, plataforma' })
+    
+    if (upsertError) {
+      console.error('Erro ao salvar no supabase:', upsertError)
+      throw new Error('supabase_upsert_failed')
+    }
 
     return true
   })
