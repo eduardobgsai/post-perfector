@@ -98,7 +98,6 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [isFacebookConnected, setIsFacebookConnected] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [reviewPosts, setReviewPosts] = useState<GeneratedPost[]>([]);
@@ -140,50 +139,8 @@ function App() {
   useEffect(() => {
     if (user) {
       fetchPosts();
-      checkIntegration();
     }
   }, [view, user]);
-
-  const checkIntegration = async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from('integracoes')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('plataforma', 'instagram')
-      .maybeSingle();
-
-    if (data && !error) {
-      setIsFacebookConnected(true);
-    }
-  };
-
-  const conectarInstagram = async () => {
-    // 1. Verificar se já existe uma identidade do Facebook vinculada ao usuário
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (currentUser?.identities) {
-      const fbIdentity = currentUser.identities.find((id) => id.provider === 'facebook');
-      if (fbIdentity) {
-        // 2. Se já existe, desvinculamos primeiro. 
-        // Isso resolve o problema de quem clicou antes da tela de callback estar pronta
-        // e agora está recebendo "identity_already_exists", sem ter o token salvo.
-        await supabase.auth.unlinkIdentity(fbIdentity);
-      }
-    }
-
-    // 3. Vincular novamente para obter um novo provider_token
-    const { data, error } = await supabase.auth.linkIdentity({
-      provider: 'facebook',
-      options: {
-        scopes: 'email, instagram_basic, instagram_content_publish, pages_show_list, pages_read_engagement',
-        redirectTo: `${window.location.origin}/callback`
-      }
-    });
-
-    if (error) {
-      toast.error("Erro ao vincular conta: " + error.message);
-    }
-  };
 
   const navItems: { id: View; label: string; icon: typeof Inbox; count?: number }[] = [
     { id: "new", label: "Novo Post", icon: PenSquare },
@@ -210,6 +167,23 @@ function App() {
       },
       ...h,
     ]);
+  };
+
+  const handleFacebookAuth = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'facebook',
+        options: {
+          scopes: 'instagram_business_basic, instagram_business_content_publish',
+          redirectTo: `${window.location.origin}/callback`
+        }
+      });
+      if (error) {
+        toast.error(error.message);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao conectar com Facebook");
+    }
   };
 
   const handleSchedule = (post: GeneratedPost, when: string) => {
@@ -325,19 +299,11 @@ function App() {
             {showSettings && (
               <div className="flex flex-col pb-2 px-2 gap-1">
                 <button
-                  onClick={conectarInstagram}
-                  className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
+                  onClick={handleFacebookAuth}
+                  className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
                 >
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
-                    <span className="truncate">Autenticação</span>
-                  </div>
-                  {isFacebookConnected && (
-                    <div className="flex items-center gap-1.5 text-green-500">
-                      <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-                      <span className="font-medium text-[10px] uppercase tracking-wider">Ativa</span>
-                    </div>
-                  )}
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
+                  <span className="truncate">Autenticação Facebook</span>
                 </button>
                 <button
                   className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"

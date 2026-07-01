@@ -26,39 +26,50 @@ function IntegracaoCallback() {
 
     const processAuth = async (session: any) => {
       if (hasProcessed.current) return;
-      
+
       const metaToken = session?.provider_token;
       const userId = session?.user?.id;
 
       if (metaToken && userId) {
         hasProcessed.current = true;
-        
+
+
         // Buscar o Instagram Business ID vinculado às páginas do usuário
         let instagramBusinessId = null;
         try {
           const fbRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account&access_token=${metaToken}`);
           const fbData = await fbRes.json();
-          
-          if (fbData.data && fbData.data.length > 0) {
-            // Encontrar a primeira página que possui uma conta do Instagram Business vinculada
-            const pageWithIg = fbData.data.find((page: any) => page.instagram_business_account?.id);
-            if (pageWithIg) {
-              instagramBusinessId = pageWithIg.instagram_business_account.id;
+
+          if (fbData.error) {
+            toast.error("Erro da API do Facebook: " + fbData.error.message);
+            console.error("Facebook API Error:", fbData.error);
+          } else if (fbData.data && fbData.data.length > 0) {
+            // Verifica quantas páginas foram retornadas
+            const pagesWithIg = fbData.data.filter((page: any) => page.instagram_business_account?.id);
+
+            if (pagesWithIg.length > 0) {
+              instagramBusinessId = pagesWithIg[0].instagram_business_account.id;
+            } else {
+              toast.warning(`O Facebook retornou ${fbData.data.length} página(s), mas nenhuma tem uma conta do Instagram Business vinculada.`);
+              console.log("Páginas retornadas:", fbData.data);
             }
+          } else {
+            toast.warning("O Facebook não retornou nenhuma página. Verifique se você concedeu as permissões corretas ou se possui uma página.");
           }
         } catch (err) {
           console.error("Erro ao buscar Instagram Business ID no Facebook:", err);
+          toast.error("Erro de conexão ao buscar dados do Instagram.");
         }
 
         // Guardar o token e o ID na nossa tabela
         const { error } = await supabase
           .from('integracoes')
           .upsert(
-            { 
-              user_id: userId, 
-              plataforma: 'instagram', 
+            {
+              user_id: userId,
+              plataforma: 'instagram',
               access_token: metaToken,
-              // Adicionamos a coluna condicionalmente se o ID foi encontrado
+              refresh_token: session?.provider_refresh_token,
               ...(instagramBusinessId ? { instagram_business_id: instagramBusinessId } : {})
             },
             { onConflict: 'user_id' }
