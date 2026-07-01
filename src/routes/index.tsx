@@ -169,22 +169,6 @@ function App() {
     ]);
   };
 
-  const handleFacebookAuth = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'facebook',
-        options: {
-          scopes: 'instagram_business_basic, instagram_business_content_publish',
-          redirectTo: `${window.location.origin}/callback`
-        }
-      });
-      if (error) {
-        toast.error(error.message);
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao conectar com Facebook");
-    }
-  };
 
   const handleSchedule = (post: GeneratedPost, when: string) => {
     setReviewPosts((p) => p.filter((x) => x.id !== post.id));
@@ -298,13 +282,6 @@ function App() {
 
             {showSettings && (
               <div className="flex flex-col pb-2 px-2 gap-1">
-                <button
-                  onClick={handleFacebookAuth}
-                  className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
-                  <span className="truncate">Autenticação Facebook</span>
-                </button>
                 <button
                   className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
                 >
