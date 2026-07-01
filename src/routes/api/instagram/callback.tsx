@@ -57,13 +57,12 @@ const exchangeInstagramToken = createServerFn({ method: 'GET' })
   })
 
 export const Route = createFileRoute('/api/instagram/callback')({
-  validateSearch: (search: Record<string, unknown>) => ({
-    code: search.code as string | undefined,
-    state: search.state as string | undefined,
-    error: search.error as string | undefined,
-  }),
-  loader: async ({ deps }) => {
-    const { code, state, error } = deps
+  loader: async ({ request }) => {
+    // Usar 'http://localhost' como base garante que o new URL() nunca falhe (mesmo se o request.url for um caminho relativo no ambiente Vercel)
+    const url = new URL(request.url, 'http://localhost')
+    const code = url.searchParams.get('code')
+    const state = url.searchParams.get('state')
+    const error = url.searchParams.get('error')
 
     if (error) {
       throw redirect({ to: '/', search: { error: 'instagram_denied' } as any })
