@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, isRedirect } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { createClient } from '@supabase/supabase-js'
 
@@ -25,23 +25,28 @@ const exchangeInstagramToken = createServerFn({ method: 'GET' })
 
     const tokenData = await tokenRes.json()
 
-    if (tokenData.error_type) {
+    if (tokenData.error_type || tokenData.error) {
       console.error('Erro ao trocar token:', tokenData)
       throw new Error('token_exchange_failed')
     }
 
     // 2. Busca dados do usuário Instagram
     const meRes = await fetch(
-      `https://graph.instagram.com/me?fields=user_id,username&access_token=${tokenData.access_token}`
+      `https://graph.instagram.com/me?fields=id,username&access_token=${tokenData.access_token}`
     )
     const meData = await meRes.json()
+    
+    if (meData.error) {
+      console.error('Erro ao buscar perfil:', meData)
+      throw new Error('profile_fetch_failed')
+    }
 
     // 3. Salva no Supabase
     await supabase.from('integracoes').upsert({
       user_id: data.state,
       plataforma: 'instagram',
       access_token: tokenData.access_token,
-      instagram_business_id: meData.user_id,
+      instagram_business_id: meData.id,
       instagram_username: meData.username,
       token_type: tokenData.token_type,
       expires_in: tokenData.expires_in,
@@ -70,6 +75,10 @@ export const Route = createFileRoute('/api/instagram/callback')({
       await exchangeInstagramToken({ data: { code, state } })
       throw redirect({ to: '/', search: { success: 'instagram_connected' } as any })
     } catch (e) {
+      if (isRedirect(e)) {
+        throw e
+      }
+      console.error('Erro no callback do instagram:', e)
       throw redirect({ to: '/', search: { error: 'token_exchange' } as any })
     }
   },
