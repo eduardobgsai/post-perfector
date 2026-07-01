@@ -51,9 +51,10 @@ const getInstagramAuthUrl = createServerFn({ method: "GET" })
   .validator((userId: string) => userId)
   .handler(async ({ data: userId }) => {
     const clientId = process.env.INSTAGRAM_APP_ID;
-    const redirectUri = `${process.env.VITE_APP_URL}/api/instagram/callback`;
+    const baseUrl = (process.env.VITE_APP_URL || "").replace(/\/$/, "");
+    const redirectUri = `${baseUrl}/api/instagram/callback`;
     const state = userId;
-    return `https://api.instagram.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments%2Cinstagram_business_content_publish&response_type=code&state=${state}`;
+    return `https://api.instagram.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments%2Cinstagram_business_content_publish&response_type=code&state=${state}`;
   });
 
 export const Route = createFileRoute("/")({

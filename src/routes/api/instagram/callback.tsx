@@ -10,6 +10,9 @@ const exchangeInstagramToken = createServerFn({ method: 'GET' })
       process.env.SUPABASE_SERVICE_ROLE_KEY! // service role — nunca expor no frontend
     )
 
+    const baseUrl = (process.env.VITE_APP_URL || "").replace(/\/$/, "");
+    const redirectUri = `${baseUrl}/api/instagram/callback`;
+
     // 1. Troca o code pelo access_token
     const tokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
       method: 'POST',
@@ -18,7 +21,7 @@ const exchangeInstagramToken = createServerFn({ method: 'GET' })
         client_id: process.env.INSTAGRAM_APP_ID!,
         client_secret: process.env.INSTAGRAM_APP_SECRET!,
         grant_type: 'authorization_code',
-        redirect_uri: `${process.env.VITE_APP_URL}/api/instagram/callback`,
+        redirect_uri: redirectUri,
         code: data.code,
       }),
     })
