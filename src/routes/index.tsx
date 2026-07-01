@@ -57,6 +57,10 @@ const getInstagramAuthUrl = createServerFn({ method: "GET" })
   });
 
 export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    success: search.success as string | undefined,
+    error: search.error as string | undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Postly — Revisão de Posts com IA" },
@@ -103,6 +107,17 @@ function App() {
       navigate({ to: "/login" });
     }
   }, [user, authLoading, navigate]);
+
+  const searchParams = Route.useSearch();
+  useEffect(() => {
+    if (searchParams.success === 'instagram_connected') {
+      toast.success('Instagram conectado com sucesso!');
+      navigate({ to: '/', replace: true });
+    } else if (searchParams.error) {
+      toast.error('Erro ao conectar Instagram. Tente novamente.');
+      navigate({ to: '/', replace: true });
+    }
+  }, [searchParams.success, searchParams.error, navigate]);
 
   const [view, setView] = useState<View>("review");
   const [sidebarOpen, setSidebarOpen] = useState(false);
