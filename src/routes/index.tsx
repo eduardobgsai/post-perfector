@@ -35,6 +35,7 @@ import {
   Settings,
   ShieldCheck,
   Coins,
+  Instagram,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -110,9 +111,26 @@ function App() {
   }, [user, authLoading, navigate]);
 
   const searchParams = Route.useSearch();
+  const [instagramConnected, setInstagramConnected] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const checkInstagram = async () => {
+      const { data } = await supabase
+        .from('integracoes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('plataforma', 'instagram')
+        .maybeSingle();
+      setInstagramConnected(!!data);
+    };
+    checkInstagram();
+  }, [user]);
+
   useEffect(() => {
     if (searchParams.success === 'instagram_connected') {
       toast.success('Instagram conectado com sucesso!');
+      setInstagramConnected(true);
       navigate({ to: '/', replace: true });
     } else if (searchParams.error) {
       toast.error('Erro ao conectar Instagram. Tente novamente.');
@@ -317,24 +335,58 @@ function App() {
                   </div>
                   <span className="text-primary font-medium">R$ 0,00</span>
                 </button>
-                <button
-                  onClick={async () => {
-                    if (user) {
+                {instagramConnected === null ? (
+                  <button className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                      <span className="truncate">Verificando...</span>
+                    </div>
+                  </button>
+                ) : instagramConnected ? (
+                  <button
+                    onClick={async () => {
+                      if (!user) return;
                       try {
-                        const url = await getInstagramAuthUrl({ data: user.id });
-                        window.location.href = url;
+                        const { error } = await supabase
+                          .from('integracoes')
+                          .delete()
+                          .eq('user_id', user.id)
+                          .eq('plataforma', 'instagram');
+                        if (error) throw error;
+                        setInstagramConnected(false);
+                        toast.success('Instagram desconectado com sucesso.');
                       } catch (err) {
-                        toast.error("Erro ao gerar link de conexão do Instagram.");
+                        toast.error('Erro ao desconectar Instagram.');
                       }
-                    }
-                  }}
-                  className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <AnimatedIcon name="instagram" className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">Conectar Instagram</span>
-                  </div>
-                </button>
+                    }}
+                    className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-green-500 hover:bg-destructive/10 hover:text-destructive transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Instagram className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate group-hover:hidden">Conectado (Desconectar)</span>
+                      <span className="truncate hidden group-hover:block">Desconectar Instagram</span>
+                    </div>
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      if (user) {
+                        try {
+                          const url = await getInstagramAuthUrl({ data: user.id });
+                          window.location.href = url;
+                        } catch (err) {
+                          toast.error("Erro ao gerar link de conexão do Instagram.");
+                        }
+                      }
+                    }}
+                    className="flex items-center justify-between rounded-sm px-2 py-1.5 text-xs text-foreground/70 hover:bg-foreground/10 hover:text-foreground transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Instagram className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Conectar Instagram</span>
+                    </div>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -943,7 +995,7 @@ function NewPostForm({ onGenerate }: { onGenerate: (f: Format, p: string) => voi
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold tracking-tight">Revisão Final</h2>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              <AnimatedIcon name="instagram" className="h-3.5 w-3.5" /> Instagram {format}
+              <Instagram className="h-3.5 w-3.5" /> Instagram {format}
             </span>
           </div>
 
