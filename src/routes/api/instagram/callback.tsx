@@ -67,22 +67,22 @@ export const Route = createFileRoute('/api/instagram/callback')({
     const error = search.error
 
     if (error) {
-      throw redirect({ to: '/', search: { error: 'instagram_denied' } as any })
+      throw redirect({ to: '/integracoes', search: { error: 'instagram_denied' } as any })
     }
 
     if (!code || !state) {
-      throw redirect({ to: '/', search: { error: 'missing_params' } as any })
+      throw redirect({ to: '/integracoes', search: { error: 'missing_params' } as any })
     }
 
     try {
       await exchangeInstagramToken({ data: { code, state } })
-      throw redirect({ to: '/', search: { success: 'instagram_connected' } as any })
+      throw redirect({ to: '/integracoes', search: { success: 'instagram_connected' } as any })
     } catch (e) {
       if (isRedirect(e)) {
         throw e
       }
       console.error('Erro no callback do instagram:', e)
-      throw redirect({ to: '/', search: { error: 'token_exchange' } as any })
+      throw redirect({ to: '/integracoes', search: { error: 'token_exchange' } as any })
     }
   },
   component: () => (

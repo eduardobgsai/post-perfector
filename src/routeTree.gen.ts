@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as IntegracoesRouteImport } from './routes/integracoes'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiInstagramCallbackRouteImport } from './routes/api/instagram/callback'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegracoesRoute = IntegracoesRouteImport.update({
+  id: '/integracoes',
+  path: '/integracoes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -31,30 +37,34 @@ const ApiInstagramCallbackRoute = ApiInstagramCallbackRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/integracoes': typeof IntegracoesRoute
   '/login': typeof LoginRoute
   '/api/instagram/callback': typeof ApiInstagramCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/integracoes': typeof IntegracoesRoute
   '/login': typeof LoginRoute
   '/api/instagram/callback': typeof ApiInstagramCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/integracoes': typeof IntegracoesRoute
   '/login': typeof LoginRoute
   '/api/instagram/callback': typeof ApiInstagramCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/api/instagram/callback'
+  fullPaths: '/' | '/integracoes' | '/login' | '/api/instagram/callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/api/instagram/callback'
-  id: '__root__' | '/' | '/login' | '/api/instagram/callback'
+  to: '/' | '/integracoes' | '/login' | '/api/instagram/callback'
+  id: '__root__' | '/' | '/integracoes' | '/login' | '/api/instagram/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  IntegracoesRoute: typeof IntegracoesRoute
   LoginRoute: typeof LoginRoute
   ApiInstagramCallbackRoute: typeof ApiInstagramCallbackRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integracoes': {
+      id: '/integracoes'
+      path: '/integracoes'
+      fullPath: '/integracoes'
+      preLoaderRoute: typeof IntegracoesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  IntegracoesRoute: IntegracoesRoute,
   LoginRoute: LoginRoute,
   ApiInstagramCallbackRoute: ApiInstagramCallbackRoute,
 }
