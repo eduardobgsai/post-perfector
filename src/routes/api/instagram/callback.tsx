@@ -57,11 +57,13 @@ const exchangeInstagramToken = createServerFn({ method: 'GET' })
   })
 
 export const Route = createFileRoute('/api/instagram/callback')({
-  loader: async ({ request }) => {
-    const url = new URL(request.url)
-    const code = url.searchParams.get('code')
-    const state = url.searchParams.get('state')
-    const error = url.searchParams.get('error')
+  validateSearch: (search: Record<string, unknown>) => ({
+    code: search.code as string | undefined,
+    state: search.state as string | undefined,
+    error: search.error as string | undefined,
+  }),
+  loader: async ({ deps }) => {
+    const { code, state, error } = deps
 
     if (error) {
       throw redirect({ to: '/', search: { error: 'instagram_denied' } as any })
